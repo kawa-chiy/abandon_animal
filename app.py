@@ -1,11 +1,9 @@
-import json
-import tempfile
+import hashlib
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from streamlit_google_auth import Authenticate
 
 # ── 페이지 설정 ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -23,78 +21,44 @@ CHART_THEME = dict(
 )
 
 # ── URL: Streamlit Secrets에서 로드 ──────────────────────────────────────────
-# secrets.toml에 아래 두 줄이 있어야 합니다:
+# Streamlit Cloud → Settings → Secrets에 아래 내용 입력:
+#
 #   data_url      = "유기동물 데이터 CSV URL"
 #   whitelist_url = "접근권한 탭 CSV URL"
+#
+# 접근권한 탭 컬럼 구조: email | password_hash | name
 CSV_URL           = st.secrets["data_url"]
 WHITELIST_CSV_URL = st.secrets["whitelist_url"]
 
 
-# ── Google OAuth 자격증명 파일 생성 (Streamlit secrets → 임시 파일) ───────────
-# secrets.toml 예시:
-#   [google_oauth]
-#   client_id     = "xxx.apps.googleusercontent.com"
-#   client_secret = "GOCSPX-xxx"
-#   redirect_uri  = "https://[앱이름].streamlit.app/oauth2callback"
-#
-#   [cookie]
-#   key = "kawa2024dashboard!xQmZ9vBnLpWqR7aYc"
-
-@st.cache_resource
-def get_credentials_path() -> str:
-    """secrets에서 OAuth 자격증명을 읽어 임시 JSON 파일로 저장합니다."""
-    creds = {
-        "web": {
-            "client_id":     st.secrets["google_oauth"]["client_id"],
-            "client_secret": st.secrets["google_oauth"]["client_secret"],
-            "redirect_uris": [st.secrets["google_oauth"]["redirect_uri"]],
-            "auth_uri":      "https://accounts.google.com/o/oauth2/auth",
-            "token_uri":     "https://oauth2.googleapis.com/token",
-        }
-    }
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False, encoding="utf-8"
-    )
-    json.dump(creds, tmp)
-    tmp.flush()
-    return tmp.name
+# ── 해시 유틸리티 ─────────────────────────────────────────────────────────────
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.strip().encode("utf-8")).hexdigest()
 
 
 # ── 화이트리스트 로드 ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
-def load_whitelist() -> set:
-    """허용된 이메일 목록을 소문자 집합으로 반환합니다."""
+def load_whitelist() -> dict:
     try:
         df = pd.read_csv(WHITELIST_CSV_URL, dtype=str)
         df.columns = df.columns.str.strip().str.lower()
-        if "email" not in df.columns:
-            return set()
-        return set(df["email"].str.strip().str.lower().dropna().tolist())
+        if "email" not in df.columns or "password_hash" not in df.columns:
+            return {}
+        df["email"] = df["email"].str.strip().str.lower()
+        df = df.dropna(subset=["email", "password_hash"])
+        result = {}
+        for _, row in df.iterrows():
+            result[row["email"]] = {
+                "password_hash": row["password_hash"].strip(),
+                "name": row.get("name", "").strip() if pd.notna(row.get("name", "")) else "",
+            }
+        return result
     except Exception:
-        return set()
-
-
-# ── Google OAuth 인증 객체 초기화 ─────────────────────────────────────────────
-try:
-    credentials_path = get_credentials_path()
-    authenticator = Authenticate(
-        secret_credentials_path=credentials_path,
-        redirect_uri=st.secrets["google_oauth"]["redirect_uri"],
-        cookie_name="kawa_dashboard_auth",
-        cookie_key=st.secrets["cookie"]["key"],
-        cookie_expiry_days=1,
-    )
-except Exception:
-    st.error("⚠️ Google OAuth 설정이 완료되지 않았습니다. Streamlit secrets를 확인하세요.")
-    st.stop()
-
-
-# ── 인증 체크 (쿠키 기반 자동 로그인) ─────────────────────────────────────────
-authenticator.check_authentification()
+        return {}
 
 
 # ── 로그인 화면 ───────────────────────────────────────────────────────────────
-if not st.session_state.get("connected"):
+def show_login_page():
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -104,34 +68,47 @@ if not st.session_state.get("connected"):
                 <span style='font-size:52px'>🐾</span>
             </div>
             <h2 style='text-align:center; margin-bottom: 4px;'>유실유기동물 현황 대시보드</h2>
-            <p style='text-align:center; color:#6b7280; margin-bottom: 28px;'>
-                동물자유연대 구성원 전용입니다.<br>조직 Google 계정으로 로그인하세요.
+            <p style='text-align:center; color:#6b7280; margin-bottom: 24px;'>
+                동물자유연대 구성원 전용입니다.
             </p>
             """,
             unsafe_allow_html=True,
         )
-        authenticator.login()
-    st.stop()
+        with st.form("login_form"):
+            email_input = st.text_input("이메일", placeholder="example@kawa.or.kr")
+            password_input = st.text_input("비밀번호", type="password", placeholder="비밀번호 입력")
+            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
+
+        if submitted:
+            email_lower = email_input.strip().lower()
+            whitelist = load_whitelist()
+            if not whitelist:
+                st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
+            elif email_lower not in whitelist:
+                st.error("❌ 등록되지 않은 이메일입니다.")
+            elif whitelist[email_lower]["password_hash"] != hash_password(password_input):
+                st.error("❌ 비밀번호가 올바르지 않습니다.")
+            else:
+                st.session_state["authenticated"] = True
+                st.session_state["user_email"] = email_lower
+                st.session_state["user_name"] = whitelist[email_lower]["name"] or email_lower
+                st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("접근 권한 요청: 관리자에게 이메일 주소를 알려주세요.")
 
 
-# ── 화이트리스트 검사 ─────────────────────────────────────────────────────────
-user_info  = st.session_state.get("user_info", {})
-user_email = user_info.get("email", "").lower()
-user_name  = user_info.get("name", user_email)
+# ── 인증 게이트 ───────────────────────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
-whitelist = load_whitelist()
-
-if user_email not in whitelist:
-    st.error(f"🚫 **{user_email}** 계정은 접근 권한이 없습니다.")
-    st.info("접근 권한 요청은 관리자에게 문의하세요.")
-    if st.button("로그아웃"):
-        authenticator.logout()
-        st.rerun()
+if not st.session_state["authenticated"]:
+    show_login_page()
     st.stop()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#   이하 코드는 화이트리스트에 있는 계정으로 로그인한 경우에만 실행됩니다.
+#   이하 코드는 로그인 성공 후에만 실행됩니다.
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 컬럼 후보 매핑 ────────────────────────────────────────────────────────────
@@ -194,15 +171,14 @@ if date_col:
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    if user_info.get("picture"):
-        st.image(user_info["picture"], width=48)
     st.markdown(
-        f"**{user_name}** 님 환영합니다 👋  \n"
-        f"<span style='color:#6b7280; font-size:0.82em'>{user_email}</span>",
+        f"**{st.session_state['user_name']}** 님 환영합니다 👋  \n"
+        f"<span style='color:#6b7280; font-size:0.82em'>{st.session_state['user_email']}</span>",
         unsafe_allow_html=True,
     )
     if st.button("로그아웃", use_container_width=True):
-        authenticator.logout()
+        for key in ["authenticated", "user_email", "user_name"]:
+            st.session_state.pop(key, None)
         st.rerun()
 
     st.divider()

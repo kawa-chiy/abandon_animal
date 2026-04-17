@@ -1,3 +1,4 @@
+import hashlib
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -19,14 +20,117 @@ CHART_THEME = dict(
     margin=dict(t=50, b=40, l=40, r=20),
 )
 
-# ── 데이터 로드 ───────────────────────────────────────────────────────────────
+# ── URL 설정 ──────────────────────────────────────────────────────────────────
+# 유기동물 데이터 시트
 CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vQz3RW9aYnvI0FwReoPTS9vdA0Ww9o4dE3IkRoYRV0LPMmaodVJzPwqZV0MSVVR_PBcuUdWtVxr_Qdg"
     "/pub?gid=1138734689&single=true&output=csv"
 )
 
-# 공공데이터 유기동물 API 컬럼명 후보 매핑
+# ✏️ 아래 URL을 '접근권한' 시트 탭의 게시 CSV 주소로 교체하세요.
+# 시트 구조: email | password_hash | name
+#   - email        : 소문자 이메일 주소
+#   - password_hash: 비밀번호를 SHA-256 해시한 값 (아래 설명 참고)
+#   - name         : 표시 이름 (선택)
+WHITELIST_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "여기에_접근권한_시트의_게시_CSV_URL을_붙여넣으세요"
+    "/pub?gid=접근권한탭의_gid&single=true&output=csv"
+)
+
+
+# ── 해시 유틸리티 ─────────────────────────────────────────────────────────────
+def hash_password(password: str) -> str:
+    """비밀번호를 SHA-256으로 해시합니다."""
+    return hashlib.sha256(password.strip().encode("utf-8")).hexdigest()
+
+
+# ── 접근권한 화이트리스트 로드 ────────────────────────────────────────────────
+@st.cache_data(ttl=300)   # 5분마다 갱신 → 시트 수정 후 최대 5분 내 반영
+def load_whitelist() -> dict:
+    """
+    반환 형식: { "email@example.com": {"password_hash": "...", "name": "홍길동"} }
+    """
+    try:
+        df = pd.read_csv(WHITELIST_CSV_URL, dtype=str)
+        df.columns = df.columns.str.strip().str.lower()
+
+        if "email" not in df.columns or "password_hash" not in df.columns:
+            return {}
+
+        df["email"] = df["email"].str.strip().str.lower()
+        df = df.dropna(subset=["email", "password_hash"])
+
+        result = {}
+        for _, row in df.iterrows():
+            result[row["email"]] = {
+                "password_hash": row["password_hash"].strip(),
+                "name": row.get("name", "").strip() if pd.notna(row.get("name", "")) else "",
+            }
+        return result
+    except Exception:
+        return {}
+
+
+# ── 로그인 화면 ───────────────────────────────────────────────────────────────
+def show_login_page():
+    _, col, _ = st.columns([1, 1.6, 1])
+
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style='text-align:center; margin-bottom: 8px;'>
+                <span style='font-size:52px'>🐾</span>
+            </div>
+            <h2 style='text-align:center; margin-bottom: 4px;'>유실유기동물 대시보드</h2>
+            <p style='text-align:center; color:#6b7280; margin-bottom: 24px;'>
+                접근 권한이 있는 계정으로 로그인하세요.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form("login_form"):
+            email_input = st.text_input("이메일", placeholder="example@kawa.or.kr")
+            password_input = st.text_input("비밀번호", type="password", placeholder="비밀번호 입력")
+            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
+
+        if submitted:
+            email_lower = email_input.strip().lower()
+            whitelist = load_whitelist()
+
+            if not whitelist:
+                st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. WHITELIST_CSV_URL을 확인하세요.")
+            elif email_lower not in whitelist:
+                st.error("❌ 등록되지 않은 이메일입니다.")
+            elif whitelist[email_lower]["password_hash"] != hash_password(password_input):
+                st.error("❌ 비밀번호가 올바르지 않습니다.")
+            else:
+                st.session_state["authenticated"] = True
+                st.session_state["user_email"] = email_lower
+                st.session_state["user_name"] = whitelist[email_lower]["name"] or email_lower
+                st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("접근 권한 요청: 관리자에게 이메일 주소를 알려주세요.")
+
+
+# ── 인증 게이트 ───────────────────────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    show_login_page()
+    st.stop()   # ← 인증 전엔 이후 코드 전혀 실행되지 않음
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   이하 코드는 로그인 성공 후에만 실행됩니다.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 컬럼 후보 매핑 ────────────────────────────────────────────────────────────
 COL_CANDIDATES = {
     "date":   ["접수일", "발생일시", "noticeEdDt", "happenDt", "접수일자", "발생일"],
     "region": ["관할기관", "orgNm", "careNm", "보호기관", "시군구"],
@@ -40,7 +144,6 @@ def detect_col(df: pd.DataFrame, key: str) -> str | None:
     for candidate in COL_CANDIDATES[key]:
         if candidate in df.columns:
             return candidate
-    # 부분 문자열 폴백
     keywords = {"date": ["일"], "region": ["기관","지역","시군"], "status": ["상태"],
                 "species": ["종류","축종"], "breed": ["품종"]}
     for c in df.columns:
@@ -51,12 +154,10 @@ def detect_col(df: pd.DataFrame, key: str) -> str | None:
 
 @st.cache_data(ttl=3600)
 def load_data() -> pd.DataFrame:
-    df = pd.read_csv(CSV_URL, dtype=str)
-    return df
+    return pd.read_csv(CSV_URL, dtype=str)
 
 
 def parse_date_col(series: pd.Series) -> pd.Series:
-    """다양한 날짜 형식을 datetime으로 변환."""
     for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
         try:
             return pd.to_datetime(series.str[:10], format=fmt, errors="coerce")
@@ -69,7 +170,7 @@ def parse_date_col(series: pd.Series) -> pd.Series:
 st.title("🐾 유실유기동물 현황 대시보드")
 st.caption(f"데이터 출처: Google Sheets (매일 자동 갱신) · 마지막 조회: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-# ── 데이터 로드 & 오류 처리 ────────────────────────────────────────────────────
+# ── 데이터 로드 ────────────────────────────────────────────────────────────────
 with st.spinner("데이터를 불러오는 중..."):
     try:
         df_raw = load_data()
@@ -77,53 +178,54 @@ with st.spinner("데이터를 불러오는 중..."):
         st.error(f"데이터 로드 실패: {e}")
         st.stop()
 
-# ── 컬럼 자동 감지 ────────────────────────────────────────────────────────────
 date_col    = detect_col(df_raw, "date")
 region_col  = detect_col(df_raw, "region")
 status_col  = detect_col(df_raw, "status")
 species_col = detect_col(df_raw, "species")
 breed_col   = detect_col(df_raw, "breed")
 
-# 날짜 컬럼 파싱
 df = df_raw.copy()
 if date_col:
     df["_date"] = parse_date_col(df[date_col])
 
-# ── 사이드바: 필터 ─────────────────────────────────────────────────────────────
+# ── 사이드바 ──────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # 사용자 정보 & 로그아웃
+    st.markdown(
+        f"**{st.session_state['user_name']}** 님 환영합니다 👋  \n"
+        f"<span style='color:#6b7280; font-size:0.82em'>{st.session_state['user_email']}</span>",
+        unsafe_allow_html=True,
+    )
+    if st.button("로그아웃", use_container_width=True):
+        for key in ["authenticated", "user_email", "user_name"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+
+    st.divider()
     st.header("🔍 필터")
 
-    # 관할기관(지역) 다중 선택
     selected_regions = []
     if region_col:
         all_regions = sorted(df[region_col].dropna().unique().tolist())
         selected_regions = st.multiselect(
-            "관할기관 (지역)",
-            options=all_regions,
-            default=[],
+            "관할기관 (지역)", options=all_regions, default=[],
             placeholder="전체 (미선택 시 전체 표시)",
         )
 
-    # 처리 상태 다중 선택
     selected_statuses = []
     if status_col:
         all_statuses = sorted(df[status_col].dropna().unique().tolist())
         selected_statuses = st.multiselect(
-            "처리 상태",
-            options=all_statuses,
-            default=[],
+            "처리 상태", options=all_statuses, default=[],
             placeholder="전체 (미선택 시 전체 표시)",
         )
 
-    # 날짜 범위 슬라이더
     if date_col and df["_date"].notna().any():
         min_date = df["_date"].min().date()
         max_date = df["_date"].max().date()
         date_range = st.date_input(
-            "접수일 범위",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
+            "접수일 범위", value=(min_date, max_date),
+            min_value=min_date, max_value=max_date,
         )
     else:
         date_range = None
@@ -137,35 +239,28 @@ filtered = df.copy()
 
 if selected_regions and region_col:
     filtered = filtered[filtered[region_col].isin(selected_regions)]
-
 if selected_statuses and status_col:
     filtered = filtered[filtered[status_col].isin(selected_statuses)]
-
 if date_range and len(date_range) == 2 and date_col:
     start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
     filtered = filtered[filtered["_date"].between(start, end)]
 
-# ── 입양·안락사율 계산 ─────────────────────────────────────────────────────────
+# ── KPI ───────────────────────────────────────────────────────────────────────
 total = len(filtered)
 
 def rate(keyword: str) -> float:
     if not status_col or total == 0:
         return 0.0
-    count = filtered[status_col].str.contains(keyword, na=False).sum()
-    return round(count / total * 100, 1)
+    return round(filtered[status_col].str.contains(keyword, na=False).sum() / total * 100, 1)
 
-adoption_rate    = rate("입양")
-euthanasia_rate  = rate("안락사")
+adoption_rate   = rate("입양")
+euthanasia_rate = rate("안락사")
+total_all       = len(df)
+adoption_all    = round(df[status_col].str.contains("입양", na=False).sum() / total_all * 100, 1) if status_col and total_all else 0
+euthanasia_all  = round(df[status_col].str.contains("안락사", na=False).sum() / total_all * 100, 1) if status_col and total_all else 0
 
-# 전체 기준 델타 (필터 적용 전후 비교)
-total_all        = len(df)
-adoption_all     = round(df[status_col].str.contains("입양", na=False).sum() / total_all * 100, 1) if status_col and total_all else 0
-euthanasia_all   = round(df[status_col].str.contains("안락사", na=False).sum() / total_all * 100, 1) if status_col and total_all else 0
-
-# ── KPI 카드 ──────────────────────────────────────────────────────────────────
 st.subheader("📊 핵심 지표")
 m1, m2, m3, m4 = st.columns(4)
-
 m1.metric("총 발생 건수", f"{total:,} 건",
           delta=f"전체 {total_all:,}건 중" if (selected_regions or selected_statuses) else None)
 m2.metric("입양률", f"{adoption_rate} %",
@@ -173,52 +268,32 @@ m2.metric("입양률", f"{adoption_rate} %",
 m3.metric("안락사율", f"{euthanasia_rate} %",
           delta=f"{euthanasia_rate - euthanasia_all:+.1f}%p (전체 대비)" if (selected_regions or selected_statuses) else None,
           delta_color="inverse")
-
 if status_col:
-    protection_count = filtered[status_col].str.contains("보호중", na=False).sum()
-    m4.metric("현재 보호중", f"{protection_count:,} 건")
+    m4.metric("현재 보호중", f"{filtered[status_col].str.contains('보호중', na=False).sum():,} 건")
 
 st.divider()
 
-# ── 차트 1 + 차트 2 ────────────────────────────────────────────────────────────
+# ── 차트 ──────────────────────────────────────────────────────────────────────
 row1_left, row1_right = st.columns([3, 2])
 
-# ── 차트 1: 최근 30일 일별 발생 추이 (꺾은선) ─────────────────────────────────
 with row1_left:
     st.subheader("📈 최근 30일 일별 유기동물 발생 추이")
     if date_col and df["_date"].notna().any():
         cutoff = filtered["_date"].max() - timedelta(days=29)
         recent = filtered[filtered["_date"] >= cutoff].copy()
         daily = (
-            recent.groupby(recent["_date"].dt.date)
-            .size()
-            .reset_index(name="발생 건수")
-            .rename(columns={"_date": "접수일"})
+            recent.groupby(recent["_date"].dt.date).size()
+            .reset_index(name="발생 건수").rename(columns={"_date": "접수일"})
         )
-        # 날짜 공백 채우기
         if not daily.empty:
             full_range = pd.date_range(daily["접수일"].min(), daily["접수일"].max())
-            daily = (
-                daily.set_index("접수일")
-                .reindex(full_range.date, fill_value=0)
-                .reset_index()
-                .rename(columns={"index": "접수일"})
-            )
-        fig_line = px.line(
-            daily,
-            x="접수일",
-            y="발생 건수",
-            markers=True,
-            title="일별 유기동물 접수 건수 (최근 30일)",
-            labels={"접수일": "접수일", "발생 건수": "발생 건수 (건)"},
-            color_discrete_sequence=["#3B82F6"],
-        )
-        fig_line.update_traces(
-            line=dict(width=2.5),
-            marker=dict(size=6),
-            fill="tozeroy",
-            fillcolor="rgba(59,130,246,0.08)",
-        )
+            daily = (daily.set_index("접수일").reindex(full_range.date, fill_value=0)
+                     .reset_index().rename(columns={"index": "접수일"}))
+        fig_line = px.line(daily, x="접수일", y="발생 건수", markers=True,
+                           title="일별 유기동물 접수 건수 (최근 30일)",
+                           color_discrete_sequence=["#3B82F6"])
+        fig_line.update_traces(line=dict(width=2.5), marker=dict(size=6),
+                               fill="tozeroy", fillcolor="rgba(59,130,246,0.08)")
         fig_line.update_xaxes(tickformat="%m/%d", tickangle=-30, showgrid=False)
         fig_line.update_yaxes(gridcolor="#e5e7eb")
         fig_line.update_layout(**CHART_THEME)
@@ -226,82 +301,46 @@ with row1_left:
     else:
         st.info("날짜 컬럼을 감지하지 못해 추이 차트를 표시할 수 없습니다.")
 
-# ── 차트 2: 축종·품종별 트리맵 ───────────────────────────────────────────────
 with row1_right:
     st.subheader("🐶 축종 · 품종별 비율")
     if species_col or breed_col:
         path = [c for c in [species_col, breed_col] if c]
-        tree_df = (
-            filtered.groupby(path)
-            .size()
-            .reset_index(name="건수")
-        )
-        # 품종 상위 30개로 제한해 트리맵 가독성 확보
-        top_breeds = tree_df.nlargest(30, "건수")
-        fig_tree = px.treemap(
-            top_breeds,
-            path=path,
-            values="건수",
-            title="축종 및 품종별 접수 비율 (상위 30)",
-            color="건수",
-            color_continuous_scale="Blues",
-        )
-        fig_tree.update_traces(
-            textinfo="label+percent parent",
-            hovertemplate="<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percentParent:.1%}<extra></extra>",
-        )
+        top_breeds = filtered.groupby(path).size().reset_index(name="건수").nlargest(30, "건수")
+        fig_tree = px.treemap(top_breeds, path=path, values="건수",
+                              title="축종 및 품종별 접수 비율 (상위 30)",
+                              color="건수", color_continuous_scale="Blues")
+        fig_tree.update_traces(textinfo="label+percent parent",
+                               hovertemplate="<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percentParent:.1%}<extra></extra>")
         fig_tree.update_layout(**CHART_THEME)
         st.plotly_chart(fig_tree, use_container_width=True)
     else:
         st.info("축종/품종 컬럼을 감지하지 못했습니다.")
 
 st.divider()
-
-# ── 차트 3 + 차트 4 (보조 차트) ───────────────────────────────────────────────
 row2_left, row2_right = st.columns(2)
 
-# 처리 상태 도넛 차트
 with row2_left:
     st.subheader("🔄 처리 상태 비율")
     if status_col:
         status_cnt = filtered[status_col].value_counts().reset_index()
         status_cnt.columns = ["처리 상태", "건수"]
-        fig_donut = px.pie(
-            status_cnt,
-            names="처리 상태",
-            values="건수",
-            hole=0.45,
-            title="처리 상태별 비율",
-            color_discrete_sequence=px.colors.qualitative.Pastel,
-        )
-        fig_donut.update_traces(
-            textposition="outside",
-            textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>건수: %{value:,}<br>비율: %{percent}<extra></extra>",
-        )
+        fig_donut = px.pie(status_cnt, names="처리 상태", values="건수", hole=0.45,
+                           title="처리 상태별 비율",
+                           color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_donut.update_traces(textposition="outside", textinfo="percent+label")
         fig_donut.update_layout(**CHART_THEME)
         st.plotly_chart(fig_donut, use_container_width=True)
     else:
         st.info("처리 상태 컬럼을 감지하지 못했습니다.")
 
-# 관할기관(지역)별 가로 막대 차트
 with row2_right:
     st.subheader("📍 관할기관(지역)별 접수 건수")
     if region_col:
-        region_cnt = (
-            filtered[region_col].value_counts().head(15).reset_index()
-        )
+        region_cnt = filtered[region_col].value_counts().head(15).reset_index()
         region_cnt.columns = ["관할기관", "건수"]
-        fig_bar = px.bar(
-            region_cnt,
-            x="건수",
-            y="관할기관",
-            orientation="h",
-            title="관할기관별 접수 건수 (상위 15)",
-            text="건수",
-            color="건수",
-            color_continuous_scale="Teal",
-        )
+        fig_bar = px.bar(region_cnt, x="건수", y="관할기관", orientation="h",
+                         title="관할기관별 접수 건수 (상위 15)",
+                         text="건수", color="건수", color_continuous_scale="Teal")
         fig_bar.update_traces(textposition="outside")
         fig_bar.update_yaxes(autorange="reversed", tickfont=dict(size=11))
         fig_bar.update_xaxes(showgrid=False)
@@ -312,7 +351,7 @@ with row2_right:
 
 st.divider()
 
-# ── 원본 데이터 테이블 ────────────────────────────────────────────────────────
+# ── 데이터 테이블 & 다운로드 ──────────────────────────────────────────────────
 st.subheader("📋 상세 데이터")
 display_df = filtered.drop(columns=["_date"], errors="ignore")
 st.dataframe(display_df, use_container_width=True, height=380)

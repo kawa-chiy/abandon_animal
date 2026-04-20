@@ -1,0 +1,5 @@
+토큰.txt
+.claude/
+*.pyc
+__pycache__/
+.env

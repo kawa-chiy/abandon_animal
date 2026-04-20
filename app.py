@@ -111,19 +111,24 @@ def show_login_page():
             submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
 
         if submitted:
-            email_lower = email_input.strip().lower()
-            whitelist = load_whitelist()
-            if not whitelist:
-                st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
-            elif email_lower not in whitelist:
-                st.error("❌ 등록되지 않은 이메일입니다.")
-            elif whitelist[email_lower]["password_hash"] != hash_password(password_input):
-                st.error("❌ 비밀번호가 올바르지 않습니다.")
+            if st.session_state.get("login_attempts", 0) >= 10:
+                st.error("🔒 로그인 시도 횟수를 초과했습니다. 관리자에게 문의하세요.")
             else:
-                st.session_state["authenticated"] = True
-                st.session_state["user_email"] = email_lower
-                st.session_state["user_name"] = whitelist[email_lower]["name"] or email_lower
-                st.rerun()
+                email_lower = email_input.strip().lower()
+                whitelist = load_whitelist()
+                if not whitelist:
+                    st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
+                elif email_lower not in whitelist or \
+                        whitelist[email_lower]["password_hash"] != hash_password(password_input):
+                    st.session_state["login_attempts"] = st.session_state.get("login_attempts", 0) + 1
+                    remaining = 10 - st.session_state["login_attempts"]
+                    st.error(f"❌ 이메일 또는 비밀번호가 올바르지 않습니다. (남은 시도: {remaining}회)")
+                else:
+                    st.session_state["authenticated"] = True
+                    st.session_state["user_email"] = email_lower
+                    st.session_state["user_name"] = whitelist[email_lower]["name"] or email_lower
+                    st.session_state["login_attempts"] = 0
+                    st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.caption("접근 권한 요청: 관리자에게 이메일 주소를 알려주세요.")

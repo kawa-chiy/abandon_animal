@@ -21,18 +21,14 @@ CHART_THEME = dict(
     margin=dict(t=50, b=40, l=40, r=20),
 )
 
-# ── URL 설정 ──────────────────────────────────────────────────────────────────
-CSV_URL = (
-    "https://docs.google.com/spreadsheets/d/e/"
-    "2PACX-1vQz3RW9aYnvI0FwReoPTS9vdA0Ww9o4dE3IkRoYRV0LPMmaodVJzPwqZV0MSVVR_PBcuUdWtVxr_Qdg"
-    "/pub?gid=1138734689&single=true&output=csv"
-)
-
-WHITELIST_CSV_URL = (
-    "https://docs.google.com/spreadsheets/d/e/"
-    "여기에_접근권한_시트의_게시_CSV_URL을_붙여넣으세요"
-    "/pub?gid=접근권한탭의_gid&single=true&output=csv"
-)
+# ── URL: Streamlit Secrets에서 로드 ──────────────────────────────────────────
+# Streamlit Cloud → Settings → Secrets에 아래 내용 입력:
+#
+#   data_url      = "유기동물 데이터 CSV URL"
+#   whitelist_url = "접근권한 탭 CSV URL"
+#
+CSV_URL           = st.secrets["data_url"]
+WHITELIST_CSV_URL = st.secrets["whitelist_url"]
 
 # ── 시/도 매핑 ────────────────────────────────────────────────────────────────
 SIDO_MAP = {
@@ -71,7 +67,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.strip().encode("utf-8")).hexdigest()
 
 
-# ── 접근권한 화이트리스트 로드 ────────────────────────────────────────────────
+# ── 화이트리스트 로드 ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_whitelist() -> dict:
     try:
@@ -102,9 +98,9 @@ def show_login_page():
             <div style='text-align:center; margin-bottom: 8px;'>
                 <span style='font-size:52px'>🐾</span>
             </div>
-            <h2 style='text-align:center; margin-bottom: 4px;'>유실유기동물 대시보드</h2>
+            <h2 style='text-align:center; margin-bottom: 4px;'>유실유기동물 현황 대시보드</h2>
             <p style='text-align:center; color:#6b7280; margin-bottom: 24px;'>
-                접근 권한이 있는 계정으로 로그인하세요.
+                동물자유연대 구성원 전용입니다.
             </p>
             """,
             unsafe_allow_html=True,
@@ -118,7 +114,7 @@ def show_login_page():
             email_lower = email_input.strip().lower()
             whitelist = load_whitelist()
             if not whitelist:
-                st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. WHITELIST_CSV_URL을 확인하세요.")
+                st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
             elif email_lower not in whitelist:
                 st.error("❌ 등록되지 않은 이메일입니다.")
             elif whitelist[email_lower]["password_hash"] != hash_password(password_input):
@@ -146,6 +142,7 @@ if not st.session_state["authenticated"]:
 #   이하 코드는 로그인 성공 후에만 실행됩니다.
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── 컬럼 후보 매핑 ────────────────────────────────────────────────────────────
 COL_CANDIDATES = {
     "date":    ["접수일", "발생일시", "noticeEdDt", "happenDt", "접수일자", "발생일"],
     "region":  ["관할기관", "orgNm", "careNm", "보호기관", "시군구"],
@@ -412,7 +409,6 @@ with tab_daily:
         cnt_d2 = len(df_d2)
         delta_cnt = cnt_d1 - cnt_d2
 
-        # KPI 행
         k1, k2, k3 = st.columns(3)
         k1.metric(
             f"전일({d1.strftime('%m/%d')}) 접수",
@@ -431,17 +427,13 @@ with tab_daily:
         euth_d1  = daily_rate(df_d1, "안락사")
         euth_d2  = daily_rate(df_d2, "안락사")
 
-        k2.metric("입양률", f"{adopt_d1} %",
-                  delta=f"{adopt_d1 - adopt_d2:+.1f}%p",
-                  delta_color="normal")
+        k2.metric("입양률", f"{adopt_d1} %", delta=f"{adopt_d1 - adopt_d2:+.1f}%p")
         k3.metric("안락사율", f"{euth_d1} %",
-                  delta=f"{euth_d1 - euth_d2:+.1f}%p",
-                  delta_color="inverse")
+                  delta=f"{euth_d1 - euth_d2:+.1f}%p", delta_color="inverse")
 
         st.divider()
         col_l, col_r = st.columns(2)
 
-        # 시/도별 비교
         with col_l:
             st.markdown("#### 📍 시/도별 접수 건수 비교")
             if region_col:
@@ -464,13 +456,11 @@ with tab_daily:
                                        xaxis_tickangle=-30)
                 st.plotly_chart(fig_sido, use_container_width=True)
 
-                # 표 출력
                 sido_cmp["증감"] = sido_cmp["증감"].apply(lambda x: f"{x:+,}")
                 st.dataframe(sido_cmp, use_container_width=True, hide_index=True)
             else:
                 st.info("지역 컬럼을 감지하지 못했습니다.")
 
-        # 축종별 비교
         with col_r:
             st.markdown("#### 🐾 축종별 접수 건수 비교")
             if species_col:
@@ -524,11 +514,9 @@ with tab_monthly:
     st.subheader("📆 월간 발생현황 보고서")
 
     today = datetime.now().date()
-    # 전월 (M-1)
     first_of_this_month = today.replace(day=1)
     last_of_m1 = first_of_this_month - timedelta(days=1)
     first_of_m1 = last_of_m1.replace(day=1)
-    # 전전월 (M-2)
     last_of_m2 = first_of_m1 - timedelta(days=1)
     first_of_m2 = last_of_m2.replace(day=1)
 
@@ -566,16 +554,13 @@ with tab_monthly:
         protect_m1 = df_m1[status_col].str.contains("보호중", na=False).sum() if status_col else 0
         protect_m2 = df_m2[status_col].str.contains("보호중", na=False).sum() if status_col else 0
 
-        # KPI 행
         k1, k2, k3, k4 = st.columns(4)
         k1.metric(f"전월({label_m1}) 접수", f"{cnt_m1:,} 건",
                   delta=f"{delta_m:+,} 건 ({delta_pct:+.1f}%)",
                   delta_color="inverse" if delta_m > 0 else "normal")
-        k2.metric("입양률", f"{adopt_m1} %",
-                  delta=f"{adopt_m1 - adopt_m2:+.1f}%p")
+        k2.metric("입양률", f"{adopt_m1} %", delta=f"{adopt_m1 - adopt_m2:+.1f}%p")
         k3.metric("안락사율", f"{euth_m1} %",
-                  delta=f"{euth_m1 - euth_m2:+.1f}%p",
-                  delta_color="inverse")
+                  delta=f"{euth_m1 - euth_m2:+.1f}%p", delta_color="inverse")
         k4.metric("보호중", f"{protect_m1:,} 건",
                   delta=f"{protect_m1 - protect_m2:+,} 건",
                   delta_color="inverse" if protect_m1 > protect_m2 else "normal")
@@ -583,7 +568,6 @@ with tab_monthly:
         st.divider()
         col_l, col_r = st.columns(2)
 
-        # 시/도별 월간 비교
         with col_l:
             st.markdown("#### 📍 시/도별 접수 건수")
             if region_col:
@@ -606,7 +590,6 @@ with tab_monthly:
             else:
                 st.info("지역 컬럼을 감지하지 못했습니다.")
 
-        # 일별 추이 (전월)
         with col_r:
             st.markdown(f"#### 📈 {label_m1} 일별 발생 추이")
             if cnt_m1 > 0:
@@ -632,7 +615,6 @@ with tab_monthly:
 
         st.divider()
 
-        # 처리상태 비교
         if status_col:
             st.markdown("#### 🔄 처리 상태 비교")
             sc1, sc2 = st.columns(2)
@@ -663,48 +645,42 @@ with tab_monthly:
 
         def build_monthly_summary() -> str:
             lines = [
-                f"[월간 유실유기동물 발생현황 요약]",
+                "[월간 유실유기동물 발생현황 요약]",
                 f"비교 기간: {label_m2} → {label_m1}",
-                f"",
-                f"■ 전체 접수 건수",
+                "",
+                "■ 전체 접수 건수",
                 f"  - {label_m2}: {cnt_m2:,}건",
                 f"  - {label_m1}: {cnt_m1:,}건 ({delta_m:+,}건, {delta_pct:+.1f}%)",
-                f"",
-                f"■ 입양률",
+                "",
+                "■ 입양률",
                 f"  - {label_m2}: {adopt_m2}%",
                 f"  - {label_m1}: {adopt_m1}% ({adopt_m1 - adopt_m2:+.1f}%p)",
-                f"",
-                f"■ 안락사율",
+                "",
+                "■ 안락사율",
                 f"  - {label_m2}: {euth_m2}%",
                 f"  - {label_m1}: {euth_m1}% ({euth_m1 - euth_m2:+.1f}%p)",
-                f"",
-                f"■ 보호중 건수",
+                "",
+                "■ 보호중 건수",
                 f"  - {label_m2}: {protect_m2:,}건",
                 f"  - {label_m1}: {protect_m1:,}건 ({protect_m1 - protect_m2:+,}건)",
             ]
-
             if region_col:
                 top5_m1 = df_m1["_sido"].value_counts().head(5)
                 top5_m2 = df_m2["_sido"].value_counts().head(5)
-                lines += [
-                    f"",
-                    f"■ 시/도별 상위 5개 지역 ({label_m1})",
-                ]
+                lines += ["", f"■ 시/도별 상위 5개 지역 ({label_m1})"]
                 for sido, cnt in top5_m1.items():
                     prev = top5_m2.get(sido, 0)
                     lines.append(f"  - {sido}: {cnt:,}건 (전월 대비 {cnt - prev:+,}건)")
-
             if species_col:
                 sp_m1 = df_m1[species_col].value_counts()
                 sp_m2 = df_m2[species_col].value_counts()
-                lines += [f"", f"■ 축종별 현황 ({label_m1})"]
+                lines += ["", f"■ 축종별 현황 ({label_m1})"]
                 for sp, cnt in sp_m1.items():
                     prev = sp_m2.get(sp, 0)
                     lines.append(f"  - {sp}: {cnt:,}건 (전월 대비 {cnt - prev:+,}건)")
-
             return "\n".join(lines)
 
-        if st.button("🔍 AI 인사이트 생성", type="primary", use_container_width=False):
+        if st.button("🔍 AI 인사이트 생성", type="primary"):
             try:
                 import anthropic
 
@@ -713,7 +689,6 @@ with tab_monthly:
                     st.error("⚠️ Streamlit Secrets에 `ANTHROPIC_API_KEY`가 설정되어 있지 않습니다.")
                 else:
                     summary = build_monthly_summary()
-
                     with st.spinner("Claude AI가 분석 중입니다..."):
                         client = anthropic.Anthropic(api_key=api_key)
                         message = client.messages.create(
@@ -742,10 +717,9 @@ with tab_monthly:
 
                     st.markdown(insight_text)
 
-                    insight_bytes = insight_text.encode("utf-8")
                     st.download_button(
                         label="📥 AI 인사이트 다운로드 (txt)",
-                        data=insight_bytes,
+                        data=insight_text.encode("utf-8"),
                         file_name=f"AI인사이트_{label_m1.replace(' ', '')}.txt",
                         mime="text/plain",
                     )
@@ -756,8 +730,6 @@ with tab_monthly:
                 st.error(f"AI 인사이트 생성 중 오류: {e}")
 
         st.divider()
-
-        # 월간 상세 데이터 다운로드
         csv_m1 = df_m1.drop(columns=["_date", "_sido"], errors="ignore").to_csv(
             index=False, encoding="utf-8-sig"
         ).encode("utf-8-sig")

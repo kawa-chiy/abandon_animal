@@ -1,7 +1,4 @@
 streamlit>=1.35.0
 pandas>=2.2.0
 plotly>=5.22.0
-<<<<<<< HEAD
-anthropic>=0.30.0
-=======
->>>>>>> ae49d9dc3cc7989c82efb46f4e6dc4ed482265ae
+anthropic>=0.40.0

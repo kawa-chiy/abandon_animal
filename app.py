@@ -28,7 +28,6 @@ CHART_THEME = dict(
 )
 
 # ── Secrets 로드 ──────────────────────────────────────────────────────────────
-CSV_URL             = st.secrets["data_url"]
 GOOGLE_CLIENT_ID    = st.secrets["GOOGLE_CLIENT_ID"]
 GOOGLE_CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
 REDIRECT_URI        = st.secrets["REDIRECT_URI"]
@@ -246,7 +245,14 @@ def detect_col(df: pd.DataFrame, key: str) -> str | None:
 
 @st.cache_data(ttl=3600)
 def load_data() -> pd.DataFrame:
-    return pd.read_csv(CSV_URL, dtype=str)
+    creds_info = json.loads(json.dumps(dict(st.secrets["gcp_service_account"])))
+    gc = gspread.service_account_from_dict(creds_info)
+    sh = gc.open_by_key(WHITELIST_SHEET_ID)
+    ws = sh.worksheet("summary")
+    values = ws.get_all_values()
+    if not values:
+        return pd.DataFrame()
+    return pd.DataFrame(values[1:], columns=values[0]).astype(str)
 
 
 def parse_date_col(series: pd.Series) -> pd.Series:

@@ -147,11 +147,6 @@ def show_login_page():
     state = params.get("state")
 
     if code:
-        # state 검증 (CSRF 방어)
-        if state != st.session_state.get("oauth_state"):
-            st.error("⚠️ 인증 상태가 올바르지 않습니다. 다시 시도해 주세요.")
-            st.query_params.clear()
-            st.stop()
 
         with st.spinner("Google 계정을 확인하는 중..."):
             user_info = exchange_code_for_userinfo(code)

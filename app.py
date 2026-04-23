@@ -113,7 +113,6 @@ def exchange_code_for_userinfo(code: str) -> dict | None:
         return set()
 
 # ── 화이트리스트 로드 (Service Account, 비공개 시트) ─────────────────────────
-@st.cache_data(ttl=300)
 def load_whitelist() -> set:
     """Google Sheets whitelist 탭에서 허용된 이메일 목록을 반환합니다."""
     try:

@@ -1,5 +1,6 @@
 import json
 import secrets
+import traceback
 import urllib.parse
 import requests
 import streamlit as st
@@ -151,7 +152,8 @@ def show_login_page():
         try:
             whitelist = load_whitelist()
         except Exception as e:
-            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.\n\n오류 상세: `{type(e).__name__}: {e}`")
+            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다.\n\n오류: `{type(e).__name__}: {e}`")
+            st.code(traceback.format_exc(), language="text")
             st.query_params.clear()
             st.stop()
 

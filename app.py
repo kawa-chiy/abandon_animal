@@ -115,10 +115,16 @@ def exchange_code_for_userinfo(code: str) -> dict | None:
 def load_whitelist() -> set:
     """Google Sheets whitelist 탭에서 허용된 이메일 목록을 반환합니다."""
     try:
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive",
+            ],
+        )
+        gc = gspread.authorize(creds)
         sh = gc.open_by_key(WHITELIST_SHEET_ID)
-
-        # GID로 워크시트 특정
         ws = next(
             (w for w in sh.worksheets() if w.id == WHITELIST_GID),
             sh.worksheets()[0],

@@ -1,3 +1,4 @@
+import json
 import secrets
 import urllib.parse
 import requests
@@ -78,13 +79,12 @@ def get_google_auth_url(state: str) -> str:
         "scope":         "openid email profile",
         "state":         state,
         "access_type":   "online",
-        "prompt":        "select_account",   # 매번 계정 선택 화면 표시
+        "prompt":        "select_account",
     }
     return AUTHORIZATION_URL + "?" + urllib.parse.urlencode(params)
 
 
 def exchange_code_for_userinfo(code: str) -> dict | None:
-    """Authorization code → access token → 사용자 정보"""
     try:
         token_resp = requests.post(
             TOKEN_URL,
@@ -111,44 +111,34 @@ def exchange_code_for_userinfo(code: str) -> dict | None:
     except Exception:
         return None
 
+
 # ── 화이트리스트 로드 (Service Account, 비공개 시트) ─────────────────────────
+@st.cache_data(ttl=300)
 def load_whitelist() -> set:
-    """Google Sheets whitelist 탭에서 허용된 이메일 목록을 반환합니다."""
-    try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
-        )
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(WHITELIST_SHEET_ID)
-        ws = next(
-            (w for w in sh.worksheets() if w.id == WHITELIST_GID),
-            sh.worksheets()[0],
-        )
-        records = ws.get_all_records()
-        return {
-            str(row.get("email", "")).strip().lower()
-            for row in records
-            if str(row.get("email", "")).strip()
-        }
-    except Exception as e:
-        st.error(f"whitelist 로드 오류: {e}")
-        return set()
+    """예외 발생 시 raise — 호출부에서 try/except로 처리합니다."""
+    # st.secrets AttrDict를 일반 Python dict로 깊은 변환
+    creds_info = json.loads(json.dumps(dict(st.secrets["gcp_service_account"])))
+    gc = gspread.service_account_from_dict(creds_info)
+    sh = gc.open_by_key(WHITELIST_SHEET_ID)
+    ws = next(
+        (w for w in sh.worksheets() if w.id == WHITELIST_GID),
+        sh.worksheets()[0],
+    )
+    records = ws.get_all_records()
+    return {
+        str(row.get("email", "")).strip().lower()
+        for row in records
+        if str(row.get("email", "")).strip()
+    }
 
 
 # ── 로그인 화면 ───────────────────────────────────────────────────────────────
 def show_login_page():
-    # OAuth 콜백 처리 (code 파라미터 감지)
     params = st.query_params
     code  = params.get("code")
     state = params.get("state")
 
     if code:
-
         with st.spinner("Google 계정을 확인하는 중..."):
             user_info = exchange_code_for_userinfo(code)
 
@@ -158,10 +148,11 @@ def show_login_page():
             st.stop()
 
         email = user_info["email"].strip().lower()
-        whitelist = load_whitelist()
 
-        if not whitelist:
-            st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
+        try:
+            whitelist = load_whitelist()
+        except Exception as e:
+            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.\n\n오류 상세: `{e}`")
             st.query_params.clear()
             st.stop()
 
@@ -199,13 +190,11 @@ def show_login_page():
             unsafe_allow_html=True,
         )
 
-        # OAuth state 생성 (CSRF 방어)
         if "oauth_state" not in st.session_state:
             st.session_state["oauth_state"] = secrets.token_hex(16)
 
         auth_url = get_google_auth_url(st.session_state["oauth_state"])
 
-        # Google 로그인 버튼
         st.link_button(
             "🔐 Google 계정으로 로그인",
             auth_url,
@@ -295,7 +284,6 @@ st.caption(f"데이터 출처: Google Sheets (매일 자동 갱신) · 마지막
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    # 프로필 사진 + 이름
     picture = st.session_state.get("user_picture", "")
     if picture:
         st.markdown(

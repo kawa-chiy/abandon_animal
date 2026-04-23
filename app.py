@@ -108,9 +108,9 @@ def exchange_code_for_userinfo(code: str) -> dict | None:
             timeout=10,
         )
         return info_resp.json()
-    except Exception:
-        return None
-
+    except Exception as e:
+        st.error(f"whitelist 로드 오류: {e}")
+        return set()
 
 # ── 화이트리스트 로드 (Service Account, 비공개 시트) ─────────────────────────
 @st.cache_data(ttl=300)

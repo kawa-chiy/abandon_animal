@@ -1,10 +1,14 @@
-import hashlib
+import secrets
+import urllib.parse
+import requests
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import calendar
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ── 페이지 설정 ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -21,14 +25,17 @@ CHART_THEME = dict(
     margin=dict(t=50, b=40, l=40, r=20),
 )
 
-# ── URL: Streamlit Secrets에서 로드 ──────────────────────────────────────────
-# Streamlit Cloud → Settings → Secrets에 아래 내용 입력:
-#
-#   data_url      = "유기동물 데이터 CSV URL"
-#   whitelist_url = "접근권한 탭 CSV URL"
-#
-CSV_URL           = st.secrets["data_url"]
-WHITELIST_CSV_URL = st.secrets["whitelist_url"]
+# ── Secrets 로드 ──────────────────────────────────────────────────────────────
+CSV_URL             = st.secrets["data_url"]
+GOOGLE_CLIENT_ID    = st.secrets["GOOGLE_CLIENT_ID"]
+GOOGLE_CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+REDIRECT_URI        = st.secrets["REDIRECT_URI"]
+WHITELIST_SHEET_ID  = st.secrets["WHITELIST_SHEET_ID"]
+WHITELIST_GID       = int(st.secrets.get("WHITELIST_GID", 0))
+
+AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/auth"
+TOKEN_URL         = "https://oauth2.googleapis.com/token"
+USERINFO_URL      = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 # ── 시/도 매핑 ────────────────────────────────────────────────────────────────
 SIDO_MAP = {
@@ -62,34 +69,124 @@ def extract_sido(val) -> str:
     return first
 
 
-# ── 해시 유틸리티 ─────────────────────────────────────────────────────────────
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.strip().encode("utf-8")).hexdigest()
+# ── Google OAuth 유틸리티 ─────────────────────────────────────────────────────
+def get_google_auth_url(state: str) -> str:
+    params = {
+        "client_id":     GOOGLE_CLIENT_ID,
+        "redirect_uri":  REDIRECT_URI,
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "state":         state,
+        "access_type":   "online",
+        "prompt":        "select_account",   # 매번 계정 선택 화면 표시
+    }
+    return AUTHORIZATION_URL + "?" + urllib.parse.urlencode(params)
 
 
-# ── 화이트리스트 로드 ──────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
-def load_whitelist() -> dict:
+def exchange_code_for_userinfo(code: str) -> dict | None:
+    """Authorization code → access token → 사용자 정보"""
     try:
-        df = pd.read_csv(WHITELIST_CSV_URL, dtype=str)
-        df.columns = df.columns.str.strip().str.lower()
-        if "email" not in df.columns or "password_hash" not in df.columns:
-            return {}
-        df["email"] = df["email"].str.strip().str.lower()
-        df = df.dropna(subset=["email", "password_hash"])
-        result = {}
-        for _, row in df.iterrows():
-            result[row["email"]] = {
-                "password_hash": row["password_hash"].strip(),
-                "name": row.get("name", "").strip() if pd.notna(row.get("name", "")) else "",
-            }
-        return result
+        token_resp = requests.post(
+            TOKEN_URL,
+            data={
+                "code":          code,
+                "client_id":     GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri":  REDIRECT_URI,
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return None
+
+        info_resp = requests.get(
+            USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        return info_resp.json()
     except Exception:
-        return {}
+        return None
+
+
+# ── 화이트리스트 로드 (Service Account, 비공개 시트) ─────────────────────────
+@st.cache_data(ttl=300)
+def load_whitelist() -> set:
+    """Google Sheets whitelist 탭에서 허용된 이메일 목록을 반환합니다."""
+    try:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        )
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(WHITELIST_SHEET_ID)
+
+        # GID로 워크시트 특정
+        ws = next(
+            (w for w in sh.worksheets() if w.id == WHITELIST_GID),
+            sh.worksheets()[0],
+        )
+        records = ws.get_all_records()
+        return {
+            str(row.get("email", "")).strip().lower()
+            for row in records
+            if str(row.get("email", "")).strip()
+        }
+    except Exception:
+        return set()
 
 
 # ── 로그인 화면 ───────────────────────────────────────────────────────────────
 def show_login_page():
+    # OAuth 콜백 처리 (code 파라미터 감지)
+    params = st.query_params
+    code  = params.get("code")
+    state = params.get("state")
+
+    if code:
+        # state 검증 (CSRF 방어)
+        if state != st.session_state.get("oauth_state"):
+            st.error("⚠️ 인증 상태가 올바르지 않습니다. 다시 시도해 주세요.")
+            st.query_params.clear()
+            st.stop()
+
+        with st.spinner("Google 계정을 확인하는 중..."):
+            user_info = exchange_code_for_userinfo(code)
+
+        if not user_info or "email" not in user_info:
+            st.error("⚠️ Google 인증에 실패했습니다. 다시 시도해 주세요.")
+            st.query_params.clear()
+            st.stop()
+
+        email = user_info["email"].strip().lower()
+        whitelist = load_whitelist()
+
+        if not whitelist:
+            st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
+            st.query_params.clear()
+            st.stop()
+
+        if email not in whitelist:
+            st.error(
+                f"❌ **{email}** 은(는) 접근 권한이 없는 계정입니다.  \n"
+                "관리자에게 접근 권한을 요청하세요."
+            )
+            st.query_params.clear()
+            st.stop()
+
+        # 인증 성공
+        st.session_state["authenticated"] = True
+        st.session_state["user_email"]    = email
+        st.session_state["user_name"]     = user_info.get("name") or email
+        st.session_state["user_picture"]  = user_info.get("picture", "")
+        st.query_params.clear()
+        st.rerun()
+        return
+
+    # ── 로그인 UI ─────────────────────────────────────────────────────────────
     _, col, _ = st.columns([1, 1.6, 1])
     with col:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -99,39 +196,53 @@ def show_login_page():
                 <span style='font-size:52px'>🐾</span>
             </div>
             <h2 style='text-align:center; margin-bottom: 4px;'>유실유기동물 현황 대시보드</h2>
-            <p style='text-align:center; color:#6b7280; margin-bottom: 24px;'>
+            <p style='text-align:center; color:#6b7280; margin-bottom: 32px;'>
                 동물자유연대 구성원 전용입니다.
             </p>
             """,
             unsafe_allow_html=True,
         )
-        with st.form("login_form"):
-            email_input = st.text_input("이메일", placeholder="example@kawa.or.kr")
-            password_input = st.text_input("비밀번호", type="password", placeholder="비밀번호 입력")
-            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
 
-        if submitted:
-            if st.session_state.get("login_attempts", 0) >= 10:
-                st.error("🔒 로그인 시도 횟수를 초과했습니다. 관리자에게 문의하세요.")
-            else:
-                email_lower = email_input.strip().lower()
-                whitelist = load_whitelist()
-                if not whitelist:
-                    st.error("⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.")
-                elif email_lower not in whitelist or \
-                        whitelist[email_lower]["password_hash"] != hash_password(password_input):
-                    st.session_state["login_attempts"] = st.session_state.get("login_attempts", 0) + 1
-                    remaining = 10 - st.session_state["login_attempts"]
-                    st.error(f"❌ 이메일 또는 비밀번호가 올바르지 않습니다. (남은 시도: {remaining}회)")
-                else:
-                    st.session_state["authenticated"] = True
-                    st.session_state["user_email"] = email_lower
-                    st.session_state["user_name"] = whitelist[email_lower]["name"] or email_lower
-                    st.session_state["login_attempts"] = 0
-                    st.rerun()
+        # OAuth state 생성 (CSRF 방어)
+        if "oauth_state" not in st.session_state:
+            st.session_state["oauth_state"] = secrets.token_hex(16)
+
+        auth_url = get_google_auth_url(st.session_state["oauth_state"])
+
+        # Google 로그인 버튼
+        st.markdown(
+            f"""
+            <div style='text-align:center;'>
+                <a href="{auth_url}" target="_self" style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 12px;
+                    background-color: #ffffff;
+                    color: #3c4043;
+                    border: 1px solid #dadce0;
+                    border-radius: 8px;
+                    padding: 12px 24px;
+                    font-size: 16px;
+                    font-weight: 500;
+                    text-decoration: none;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+                    transition: box-shadow 0.2s;
+                ">
+                    <svg width="20" height="20" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    </svg>
+                    Google 계정으로 로그인
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.caption("접근 권한 요청: 관리자에게 이메일 주소를 알려주세요.")
+        st.caption("접근 권한 요청: 관리자에게 Google 계정 이메일 주소를 알려주세요.")
 
 
 # ── 인증 게이트 ───────────────────────────────────────────────────────────────
@@ -203,7 +314,6 @@ df = df_raw.copy()
 if date_col:
     df["_date"] = parse_date_col(df[date_col])
 
-# 시/도 컬럼 생성
 if region_col:
     df["_sido"] = df[region_col].apply(extract_sido)
 
@@ -213,13 +323,20 @@ st.caption(f"데이터 출처: Google Sheets (매일 자동 갱신) · 마지막
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # 프로필 사진 + 이름
+    picture = st.session_state.get("user_picture", "")
+    if picture:
+        st.markdown(
+            f"<img src='{picture}' style='border-radius:50%; width:48px; height:48px;'>",
+            unsafe_allow_html=True,
+        )
     st.markdown(
         f"**{st.session_state['user_name']}** 님 환영합니다 👋  \n"
         f"<span style='color:#6b7280; font-size:0.82em'>{st.session_state['user_email']}</span>",
         unsafe_allow_html=True,
     )
     if st.button("로그아웃", use_container_width=True):
-        for key in ["authenticated", "user_email", "user_name"]:
+        for key in ["authenticated", "user_email", "user_name", "user_picture", "oauth_state"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -399,8 +516,8 @@ with tab_daily:
     st.subheader("📅 일간 발생현황 보고서")
 
     today = datetime.now().date()
-    d1 = today - timedelta(days=1)   # 전일
-    d2 = today - timedelta(days=2)   # 전전일
+    d1 = today - timedelta(days=1)
+    d2 = today - timedelta(days=2)
 
     st.caption(f"기준일: **{d1.strftime('%Y년 %m월 %d일')}** (전일) vs **{d2.strftime('%Y년 %m월 %d일')}** (전전일)")
 

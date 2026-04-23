@@ -113,7 +113,6 @@ def exchange_code_for_userinfo(code: str) -> dict | None:
 
 
 # ── 화이트리스트 로드 (Service Account, 비공개 시트) ─────────────────────────
-@st.cache_data(ttl=300)
 def load_whitelist() -> set:
     """예외 발생 시 raise — 호출부에서 try/except로 처리합니다."""
     # st.secrets AttrDict를 일반 Python dict로 깊은 변환
@@ -152,7 +151,7 @@ def show_login_page():
         try:
             whitelist = load_whitelist()
         except Exception as e:
-            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.\n\n오류 상세: `{e}`")
+            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다. 관리자에게 문의하세요.\n\n오류 상세: `{type(e).__name__}: {e}`")
             st.query_params.clear()
             st.stop()
 

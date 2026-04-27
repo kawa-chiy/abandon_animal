@@ -19,52 +19,51 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── CSS 주입 (@import 방식 – <link> 태그 미사용) ──────────────────────────────
+# ── CSS 주입 (@import 방식 – HTML 디자인 적용) ──────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
 html, body, [class*="css"], * { font-family: 'Noto Sans KR', sans-serif !important; }
 
-.stApp { background-color: #f3f6f9 !important; }
+/* 배경색 및 여백 */
+.stApp { background-color: oklch(97.5% 0.006 220) !important; }
 .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; max-width: 100% !important; }
 
 /* 다크 사이드바 */
-[data-testid="stSidebar"] { background-color: #151f32 !important; }
+[data-testid="stSidebar"] { background-color: #151f32 !important; border-right: 1px solid rgba(255,255,255,0.07) !important;}
 [data-testid="stSidebar"] > div:first-child { background-color: #151f32 !important; }
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span { color: #e2e8f0 !important; }
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 { color: #f1f5f9 !important; }
-[data-testid="stSidebar"] small { color: #64748b !important; }
-[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.07) !important; }
-[data-testid="stSidebar"] [data-baseweb="select"] > div { background-color: rgba(255,255,255,0.06) !important; border-color: rgba(255,255,255,0.12) !important; color: #e2e8f0 !important; }
-[data-testid="stSidebar"] [data-baseweb="tag"] { background-color: rgba(13,148,136,0.3) !important; color: #5eead4 !important; }
-[data-testid="stSidebar"] input[type="date"] { background-color: rgba(255,255,255,0.06) !important; border-color: rgba(255,255,255,0.12) !important; color: #e2e8f0 !important; color-scheme: dark; border-radius: 7px; }
-[data-testid="stSidebar"] .stButton > button { background-color: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.12) !important; color: #94a3b8 !important; border-radius: 8px !important; font-size: 12px !important; }
-[data-testid="stSidebar"] .stButton > button:hover { background-color: rgba(255,255,255,0.12) !important; color: #e2e8f0 !important; }
-[data-testid="stSidebar"] details { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.08) !important; border-radius: 8px !important; }
-[data-testid="stSidebar"] details summary { color: #94a3b8 !important; font-size: 12px !important; }
-[data-testid="stSidebar"] [data-testid="stExpanderDetails"] * { color: #94a3b8 !important; font-size: 11px !important; }
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span { color: #e2e8f0 !important; }
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #f1f5f9 !important; }
+[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.07) !important; margin: 16px 0 !important; }
+[data-testid="stSidebar"] [data-baseweb="select"] > div { background-color: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #e2e8f0 !important; border-radius: 7px !important;}
+[data-testid="stSidebar"] input[type="date"] { background-color: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #e2e8f0 !important; color-scheme: dark; border-radius: 7px; }
+[data-testid="stSidebar"] .stButton > button { background-color: rgba(255,255,255,0.06) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #94a3b8 !important; border-radius: 8px !important; font-size: 12px !important; transition: all 0.15s; }
+[data-testid="stSidebar"] .stButton > button:hover { background-color: rgba(255,255,255,0.1) !important; color: #e2e8f0 !important; }
 
-/* 탭 */
-.stTabs [data-baseweb="tab-list"] { background-color: #e2e8f0 !important; border-radius: 8px !important; padding: 3px !important; gap: 2px !important; border-bottom: none !important; }
-.stTabs [data-baseweb="tab"] { border-radius: 6px !important; font-size: 12.5px !important; font-weight: 500 !important; color: #64748b !important; padding: 6px 16px !important; background: transparent !important; border: none !important; }
-.stTabs [aria-selected="true"] { background-color: #ffffff !important; color: #0f172a !important; font-weight: 600 !important; box-shadow: 0 1px 3px rgba(15,23,42,0.08) !important; }
-.stTabs [data-baseweb="tab-border"] { display: none !important; }
-.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+/* 탭 네비게이션 (HTML 스타일) */
+.stTabs [data-baseweb="tab-list"] { background-color: #f1f5f9 !important; border-radius: 8px !important; padding: 3px !important; gap: 2px !important; border-bottom: none !important; }
+.stTabs [data-baseweb="tab"] { border-radius: 6px !important; font-size: 12.5px !important; font-weight: 500 !important; color: #64748b !important; padding: 6px 14px !important; background: transparent !important; border: none !important; transition: all 0.15s; }
+.stTabs [aria-selected="true"] { background-color: #ffffff !important; color: #0f172a !important; font-weight: 600 !important; box-shadow: 0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04) !important; }
+.stTabs [data-baseweb="tab-border"], .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+
+/* 카드 컨테이너 테두리 제거 및 HTML 그림자 적용 */
+[data-testid="stVerticalBlock"] > div > div > div > div.css-1r6slb0, [data-testid="stVerticalBlockBorderWrapper"] {
+    background: #ffffff !important;
+    border-radius: 12px !important;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04) !important;
+    border: none !important;
+}
+
+/* 데이터프레임 */
+[data-testid="stDataFrame"] { border-radius: 8px !important; border: 1px solid #e8edf2 !important; }
 
 /* 다운로드 버튼 */
-.stDownloadButton > button { background: #ffffff !important; border: 1px solid #e8edf2 !important; color: #0f172a !important; border-radius: 8px !important; font-size: 12.5px !important; font-weight: 500 !important; }
-.stDownloadButton > button:hover { background: #f8fafc !important; border-color: #0d9488 !important; color: #0d9488 !important; }
+.stDownloadButton > button { background: #ffffff !important; border: 1px solid #e8edf2 !important; color: #0f172a !important; border-radius: 8px !important; font-size: 12.5px !important; font-weight: 500 !important; transition: all 0.15s; }
+.stDownloadButton > button:hover { background: #f8fafc !important; border-color: oklch(56% 0.14 190) !important; color: oklch(56% 0.14 190) !important; }
 
 /* Primary 버튼 */
 .stButton > button[kind="primary"] { background: linear-gradient(135deg, #6366f1, #0d9488) !important; border: none !important; border-radius: 9px !important; font-size: 13px !important; font-weight: 600 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important; }
-
-/* 데이터프레임 */
-[data-testid="stDataFrame"] { border-radius: 8px !important; overflow: hidden !important; border: 1px solid #e8edf2 !important; }
 
 /* 스크롤바 */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -90,31 +89,35 @@ C_GRAY   = "#94a3b8"
 TEAL_SCALE = ["#0f766e", "#0d9488", "#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4"]
 
 
-# ── 헬퍼: KPI 카드 (100% 인라인 스타일) ──────────────────────────────────────
+# ── 헬퍼: KPI 카드 (백그라운드 디자인 추가 적용) ──────────────────────────────
 def kpi_card(label: str, value: str, delta: str = None,
              delta_type: str = "neutral", color: str = "teal") -> str:
-    border_map = {"teal": "#0d9488", "amber": "#d97706", "rose": "#e11d48", "indigo": "#6366f1"}
-    delta_bg   = {"up": "#dcfce7", "down": "#fee2e2", "neutral": "#f1f5f9"}
-    delta_fg   = {"up": "#166534", "down": "#991b1b", "neutral": "#64748b"}
-    border = border_map.get(color, "#0d9488")
+    border_map = {"teal": "#0d9488", "amber": "#f59e0b", "rose": "#e11d48", "indigo": "#6366f1"}
+    delta_bg   = {"up": "oklch(95% 0.04 155)", "down": "oklch(96% 0.04 15)", "neutral": "#f1f5f9"}
+    delta_fg   = {"up": "oklch(42% 0.15 155)", "down": "oklch(42% 0.18 15)", "neutral": "#64748b"}
+    base_color = border_map.get(color, "#0d9488")
+    
     delta_html = ""
     if delta:
-        arrow = "▲ " if delta_type == "up" else ("▼ " if delta_type == "down" else "")
+        arrow = "▲" if delta_type == "up" else ("▼" if delta_type == "down" else "")
         bg = delta_bg.get(delta_type, "#f1f5f9")
         fg = delta_fg.get(delta_type, "#64748b")
         delta_html = (
             f'<span style="display:inline-flex;align-items:center;gap:4px;'
-            f'font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px;'
-            f'background:{bg};color:{fg};">{arrow}{delta}</span>'
+            f'font-size:11px;font-weight:500;padding:2px 7px;border-radius:99px;'
+            f'background:{bg};color:{fg};">{arrow} {delta}</span>'
         )
+        
     return (
         f'<div style="background:#ffffff;border-radius:12px;padding:18px 20px;'
         f'box-shadow:0 1px 3px rgba(15,23,42,0.06),0 1px 2px rgba(15,23,42,0.04);'
-        f'border-left:3px solid {border};overflow:hidden;">'
-        f'<div style="font-size:11.5px;font-weight:500;color:#64748b;margin-bottom:8px;">{label}</div>'
-        f'<div style="font-size:26px;font-weight:700;color:#0f172a;line-height:1;'
-        f'margin-bottom:8px;letter-spacing:-0.03em;">{value}</div>'
-        f'{delta_html}</div>'
+        f'border-left:3px solid {base_color};position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;top:0;right:0;width:80px;height:80px;border-radius:50%;'
+        f'background:{base_color};opacity:0.05;transform:translate(20px,-20px);"></div>'
+        f'<div style="font-size:11.5px;font-weight:500;color:#64748b;margin-bottom:8px;position:relative;z-index:1;">{label}</div>'
+        f'<div style="font-size:28px;font-weight:700;color:#0f172a;line-height:1;'
+        f'margin-bottom:8px;letter-spacing:-0.03em;position:relative;z-index:1;">{value}</div>'
+        f'<div style="position:relative;z-index:1;">{delta_html}</div></div>'
     )
 
 
@@ -488,8 +491,9 @@ with tab_dash:
                          .reset_index().rename(columns={"index": "접수일"}))
             fig = px.line(daily, x="접수일", y="발생 건수", markers=True,
                           color_discrete_sequence=[C_TEAL])
-            fig.update_traces(line=dict(width=2.5), marker=dict(size=5),
-                              fill="tozeroy", fillcolor="rgba(13,148,136,0.08)")
+            # 곡선(spline) 및 색상, 마커 사이즈 등 업데이트
+            fig.update_traces(line=dict(width=2.5, shape="spline"), marker=dict(size=0),
+                              fill="tozeroy", fillcolor="rgba(13,148,136,0.18)")
             fig.update_xaxes(tickformat="%m/%d", tickangle=-30, showgrid=False, showline=False)
             fig.update_yaxes(gridcolor="#f1f5f9", showline=False)
             fig.update_layout(**CHART_THEME)

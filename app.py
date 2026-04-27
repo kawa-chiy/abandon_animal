@@ -311,21 +311,42 @@ INDIGO_SCALE= ["#4338ca", "#6366f1", "#818cf8", "#a5b4fc", "#c7d2fe"]
 # ── KPI 카드 헬퍼 ─────────────────────────────────────────────────────────────
 def kpi_card(label: str, value: str, delta: str = None,
              delta_type: str = "neutral", color: str = "teal") -> str:
+    border_map = {
+        "teal": "#0d9488", "amber": "#d97706",
+        "rose": "#e11d48", "indigo": "#6366f1",
+    }
+    delta_style_map = {
+        "up":      "background:#dcfce7;color:#166534;",
+        "down":    "background:#fee2e2;color:#991b1b;",
+        "neutral": "background:#f1f5f9;color:#64748b;",
+    }
+    border = border_map.get(color, "#0d9488")
     delta_html = ""
     if delta:
         arrow = "▲ " if delta_type == "up" else ("▼ " if delta_type == "down" else "")
-        delta_html = f'<span class="kpi-delta {delta_type}">{arrow}{delta}</span>'
-    return f"""
-    <div class="kpi-card {color}">
-        <div class="kpi-label">{label}</div>
-        <div class="kpi-value">{value}</div>
-        {delta_html}
-    </div>"""
+        ds = delta_style_map.get(delta_type, delta_style_map["neutral"])
+        delta_html = (
+            f'<span style="{ds}display:inline-flex;align-items:center;'
+            f'gap:4px;font-size:11px;font-weight:500;padding:2px 8px;'
+            f'border-radius:99px;">{arrow}{delta}</span>'
+        )
+    return (
+        f'<div style="background:#ffffff;border-radius:12px;padding:18px 20px;'
+        f'box-shadow:0 1px 3px rgba(15,23,42,0.06);border-left:3px solid {border};overflow:hidden;">'
+        f'<div style="font-size:11.5px;font-weight:500;color:#64748b;margin-bottom:8px;">{label}</div>'
+        f'<div style="font-size:26px;font-weight:700;color:#0f172a;line-height:1;'
+        f'margin-bottom:8px;letter-spacing:-0.03em;">{value}</div>'
+        f'{delta_html}</div>'
+    )
 
 
 def kpi_grid(*cards: str):
     inner = "".join(cards)
-    st.markdown(f'<div class="kpi-grid">{inner}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);'
+        f'gap:14px;margin-bottom:20px;">{inner}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── 차트 카드 헬퍼 ────────────────────────────────────────────────────────────

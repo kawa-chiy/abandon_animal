@@ -119,12 +119,10 @@ def kpi_card(label: str, value: str, delta: str = None,
 
 
 def kpi_grid(*cards: str):
-    inner = "".join(cards)
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);'
-        f'gap:14px;margin-bottom:20px;">{inner}</div>',
-        unsafe_allow_html=True,
-    )
+    cols = st.columns(len(cards))
+    for col, card in zip(cols, cards):
+        with col:
+            st.markdown(card, unsafe_allow_html=True)
 
 
 # ── 헬퍼: 차트 섹션 헤더 ─────────────────────────────────────────────────────
@@ -421,8 +419,12 @@ with st.sidebar:
                                    min_value=min_date, max_value=max_date)
 
     st.divider()
-    with st.expander("🗂 컬럼 목록 확인"):
-        st.write(df_raw.columns.tolist())
+    st.markdown(
+        '<div style="color:#475569;font-size:10px;font-weight:600;'
+        'letter-spacing:0.08em;text-transform:uppercase;margin-top:8px;margin-bottom:6px;">🗂 컬럼 목록</div>',
+        unsafe_allow_html=True,
+    )
+    st.write(df_raw.columns.tolist())
 
 
 # ── 필터 적용 ─────────────────────────────────────────────────────────────────

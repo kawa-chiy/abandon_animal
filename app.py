@@ -288,7 +288,7 @@ div[data-testid="metric-container"] { display: none !important; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
 </style>
-"""
+""")
 
 
 # ── 공통 Plotly 레이아웃 테마 ─────────────────────────────────────────────────

@@ -352,7 +352,16 @@ def kpi_grid(*cards: str):
 # ── 차트 카드 헬퍼 ────────────────────────────────────────────────────────────
 def chart_card_header(icon: str, title: str):
     st.markdown(
-        f'<div class="chart-card-title">{icon}&nbsp;{title}</div>',
+        f'<div style="display:flex;align-items:center;justify-content:space-between;'
+        f'background:#ffffff;border-bottom:1px solid #e8edf2;'
+        f'padding:14px 0 12px;margin-bottom:20px;">'
+        f'<div style="display:flex;align-items:center;gap:10px;">'
+        f'<span style="font-size:18px;">🐾</span>'
+        f'<span style="font-size:16px;font-weight:700;color:#0f172a;">유실유기동물 현황 대시보드</span>'
+        f'</div>'
+        f'<span style="font-size:11.5px;color:#94a3b8;">'
+        f'데이터 출처: Google Sheets · 매일 자동 갱신 · 마지막 조회: {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+        f'</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -900,7 +909,10 @@ with tab_daily:
     d2 = today - timedelta(days=2)
 
     st.markdown(
-        f'<div class="section-badge">📅 일간 발생현황 보고서 &nbsp;·&nbsp; '
+        f'<div style="display:inline-flex;align-items:center;gap:8px;padding:6px 14px;'
+        f'background:#f0fdfa;border-radius:8px;font-size:12px;font-weight:500;'
+        f'color:#0d9488;margin-bottom:16px;">'
+        f'📅 일간 발생현황 보고서 &nbsp;·&nbsp; '
         f'기준: <b>{d1.strftime("%Y년 %m월 %d일")}</b> (전일) vs '
         f'<b>{d2.strftime("%Y년 %m월 %d일")}</b> (전전일)</div>',
         unsafe_allow_html=True,
@@ -1023,7 +1035,10 @@ with tab_monthly:
     label_m2 = first_of_m2.strftime("%Y년 %m월")
 
     st.markdown(
-        f'<div class="section-badge">📆 월간 발생현황 보고서 &nbsp;·&nbsp; '
+        f'<div style="display:inline-flex;align-items:center;gap:8px;padding:6px 14px;'
+        f'background:#f0fdfa;border-radius:8px;font-size:12px;font-weight:500;'
+        f'color:#0d9488;margin-bottom:16px;">'
+        f'📆 월간 발생현황 보고서 &nbsp;·&nbsp; '
         f'비교: <b>{label_m1}</b> (전월) vs <b>{label_m2}</b> (전전월)</div>',
         unsafe_allow_html=True,
     )

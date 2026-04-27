@@ -350,8 +350,12 @@ def chart_donut(labels, values, colors=None, title=""):
         hovertemplate="%{label}: %{value:,}건 (%{percent})<extra></extra>",
     ))
     total = sum(values)
+    
+    # PLOTLY_LAYOUT에서 중복되는 키워드를 미리 제외합니다. (TypeError 방지)
+    layout_args = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ["xaxis", "yaxis", "legend", "margin"]}
+    
     fig.update_layout(
-        **{k:v for k,v in PLOTLY_LAYOUT.items() if k != "xaxis" and k != "yaxis"},
+        **layout_args,
         annotations=[dict(text=f"<b>{total:,}건</b>", x=0.5, y=0.5, font=dict(size=14, color=COLORS["text"]), showarrow=False)],
         legend=dict(orientation="h", y=-0.12, font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
         height=290,
@@ -495,10 +499,10 @@ with st.sidebar:
     </div>
     <hr>
     <div style="display:flex;align-items:center;gap:10px;padding:4px 0 12px;">
-        <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#0d9488,#6366f1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:white;flex-shrink:0;">김</div>
+        <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#0d9488,#6366f1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:white;flex-shrink:0;">채</div>
         <div>
-            <div style="color:#f1f5f9;font-size:12.5px;font-weight:500;">김민영 님 환영합니다 👋</div>
-            <div style="color:#64748b;font-size:11px;">city@animalkorea.org</div>
+            <div style="color:#f1f5f9;font-size:12.5px;font-weight:500;">채일택 국장님 환영합니다 👋</div>
+            <div style="color:#64748b;font-size:11px;">동물자유연대 전략사업국</div>
         </div>
     </div>
     <hr>

@@ -20,8 +20,8 @@ st.set_page_config(
 )
 
 # ── 디자인 시스템 CSS 주입 ────────────────────────────────────────────────────
-st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+st.html("""
+<link href="https://fonts.googleapis.com/...">
 <style>
 /* ── 글꼴 전역 적용 ── */
 html, body, [class*="css"], * {
@@ -288,7 +288,7 @@ div[data-testid="metric-container"] { display: none !important; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
 </style>
-""", unsafe_allow_html=True)
+"""
 
 
 # ── 공통 Plotly 레이아웃 테마 ─────────────────────────────────────────────────

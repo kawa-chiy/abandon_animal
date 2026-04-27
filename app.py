@@ -351,7 +351,6 @@ def chart_donut(labels, values, colors=None, title=""):
     ))
     total = sum(values)
     
-    # PLOTLY_LAYOUT에서 중복되는 키워드를 미리 제외합니다. (TypeError 방지)
     layout_args = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ["xaxis", "yaxis", "legend", "margin"]}
     
     fig.update_layout(
@@ -579,14 +578,14 @@ with tab1:
     with c1:
         section_title("📈", "최근 30일 일별 유기동물 발생 추이")
         fig = chart_area(daily_df, "날짜", "건수")
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_area")
 
     with c2:
         section_title("🌿", "축종·품종별 비율 (상위 12)")
         treemap_labels = ["믹스견(개)","코리안숏헤어(고양이)","기타고양이","말티즈(개)","푸들(개)","기타동물","포메라니안(개)","진돗개","시바견","리트리버(개)","비글(개)","치와와(개)"]
         treemap_vals   = [5821, 4102, 1230, 1204, 876, 723, 542, 487, 312, 289, 234, 198]
         fig2 = chart_treemap(treemap_labels, treemap_vals)
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_tree")
 
     # Row 2: 도넛 + 수평 막대
     c3, c4 = st.columns(2)
@@ -597,7 +596,7 @@ with tab1:
             values=status_df["건수"].tolist(),
             colors=list(STATUS_COLORS.values()),
         )
-        st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_donut")
 
     with c4:
         section_title("📍", "시/도별 접수 건수")
@@ -605,7 +604,7 @@ with tab1:
             labels=sido_df["지역"].tolist(),
             values=sido_df["건수_03월"].tolist(),
         )
-        st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_hbar")
 
     # 데이터 테이블
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -627,7 +626,7 @@ with tab1:
     )
 
     csv = table_df.to_csv(index=False, encoding="utf-8-sig")
-    st.download_button("↓  CSV 다운로드", data=csv.encode("utf-8-sig"), file_name="유실유기동물_전체.csv", mime="text/csv")
+    st.download_button("↓  CSV 다운로드", data=csv.encode("utf-8-sig"), file_name="유실유기동물_전체.csv", mime="text/csv", key="dash_btn_dl")
 
 
 # ══════════════════════════════════════════════
@@ -665,7 +664,7 @@ with tab2:
              ("04/26 (전일)",   [35,24,22,19,17,12,9,8,7,6])],
             colors=[COLORS["gray"], COLORS["primary"]],
         )
-        st.plotly_chart(fig_d1, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_d1, use_container_width=True, config={"displayModeBar": False}, key="daily_chart_bar1")
 
     with dc2:
         section_title("🐾", "축종별 접수 건수 비교")
@@ -675,7 +674,7 @@ with tab2:
              ("04/26 (전일)",   [163,98,26])],
             colors=[COLORS["gray"], COLORS["secondary"]],
         )
-        st.plotly_chart(fig_d2, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_d2, use_container_width=True, config={"displayModeBar": False}, key="daily_chart_bar2")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     section_title("📋", "전일 상세 데이터 (04/26)")
@@ -686,7 +685,7 @@ with tab2:
         height=200,
     )
     csv_d = table_df.head(4).to_csv(index=False)
-    st.download_button("↓  04/26 데이터 다운로드", data=csv_d.encode("utf-8-sig"), file_name="유실유기동물_20260426.csv", mime="text/csv")
+    st.download_button("↓  04/26 데이터 다운로드", data=csv_d.encode("utf-8-sig"), file_name="유실유기동물_20260426.csv", mime="text/csv", key="daily_btn_dl")
 
 
 # ══════════════════════════════════════════════
@@ -724,12 +723,12 @@ with tab3:
              ("2026년 03월", top10["건수_03월"].tolist())],
             colors=[COLORS["gray"], COLORS["indigo"]],
         )
-        st.plotly_chart(fig_m1, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_m1, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_bar1")
 
     with mc2:
         section_title("📈", "2026년 03월 일별 발생 건수")
         fig_m2 = chart_vbar(monthly_daily_df["일"].tolist(), monthly_daily_df["건수"].tolist(), color=COLORS["indigo"])
-        st.plotly_chart(fig_m2, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_m2, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_vbar")
 
     # 처리 상태 비교 (도넛 2개)
     md1, md2 = st.columns(2)
@@ -739,7 +738,7 @@ with tab3:
             labels=["보호중","입양","자연사","안락사","반환","기증","방사"],
             values=[9303, 4012, 2498, 1998, 1820, 823, 543],
         )
-        st.plotly_chart(fig_s1, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_s1, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_donut1")
 
     with md2:
         section_title("🔄", "처리 상태 — 2026년 03월")
@@ -747,7 +746,7 @@ with tab3:
             labels=status_df["상태"].tolist(),
             values=status_df["건수"].tolist(),
         )
-        st.plotly_chart(fig_s2, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_s2, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_donut2")
 
     # AI 인사이트
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -769,7 +768,7 @@ with tab3:
     if "ai_insight" not in st.session_state:
         st.session_state.ai_insight = None
 
-    if st.button("🔍  AI 인사이트 생성"):
+    if st.button("🔍  AI 인사이트 생성", key="monthly_btn_ai"):
         with st.spinner("Claude AI가 분석 중입니다..."):
             import anthropic
             client = anthropic.Anthropic()
@@ -815,8 +814,9 @@ with tab3:
                 data=st.session_state.ai_insight.encode("utf-8"),
                 file_name="AI_인사이트_2026년03월.txt",
                 mime="text/plain",
+                key="monthly_btn_ai_dl"
             )
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     csv_m = table_df.to_csv(index=False)
-    st.download_button("↓  2026년 03월 데이터 다운로드", data=csv_m.encode("utf-8-sig"), file_name="유실유기동물_202603.csv", mime="text/csv")
+    st.download_button("↓  2026년 03월 데이터 다운로드", data=csv_m.encode("utf-8-sig"), file_name="유실유기동물_202603.csv", mime="text/csv", key="monthly_btn_dl")

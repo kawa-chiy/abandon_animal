@@ -6,6 +6,12 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 import random
+import urllib.parse
+import requests
+import secrets
+import json
+import traceback
+import gspread
 
 # ─────────────────────────────────────────────
 # 페이지 설정
@@ -137,6 +143,7 @@ hr {
     padding: 8px 18px !important;
     transition: all 0.15s !important;
     font-family: 'Noto Sans KR', sans-serif !important;
+    width: 100%;
 }
 .stDownloadButton > button:hover {
     border-color: #0d9488 !important;
@@ -160,6 +167,19 @@ hr {
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 }
 
+/* 사이드바 로그아웃 버튼용 특별 스타일 (다크 모드 어울리게) */
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: #94a3b8 !important;
+    box-shadow: none !important;
+    width: 100%;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.1) !important;
+    color: #e2e8f0 !important;
+}
+
 /* ── 섹션 헤더 ── */
 .section-header {
     font-size: 13px;
@@ -173,29 +193,118 @@ hr {
     margin-bottom: 4px;
 }
 
-/* ── KPI 컬러 바 ── */
-.kpi-teal  { border-left: 3px solid #0d9488 !important; }
-.kpi-amber { border-left: 3px solid #d97706 !important; }
-.kpi-rose  { border-left: 3px solid #e11d48 !important; }
-.kpi-indigo{ border-left: 3px solid #6366f1 !important; }
-
-/* ── 뱃지 ── */
-.badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 99px;
-    font-size: 11.5px;
-    font-weight: 500;
-    line-height: 1.4;
-}
-.badge-teal { background: #ccfbf1; color: #0f766e; }
-.badge-indigo { background: #e0e7ff; color: #4338ca; }
-.badge-amber { background: #fef3c7; color: #92400e; }
-
 /* plotly 툴팁 */
 .modebar { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# Google OAuth 설정 및 로그인 페이지
+# ─────────────────────────────────────────────
+try:
+    GOOGLE_CLIENT_ID     = st.secrets["GOOGLE_CLIENT_ID"]
+    GOOGLE_CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+    REDIRECT_URI         = st.secrets["REDIRECT_URI"]
+    WHITELIST_SHEET_ID   = st.secrets["WHITELIST_SHEET_ID"]
+    WHITELIST_GID        = int(st.secrets.get("WHITELIST_GID", 0))
+except Exception as e:
+    st.warning("⚠️ Streamlit Secrets 설정이 필요합니다. 로컬 테스트 중이라면 무시하셔도 됩니다.")
+
+AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/auth"
+TOKEN_URL         = "https://oauth2.googleapis.com/token"
+USERINFO_URL      = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+def get_google_auth_url(state: str) -> str:
+    params = {
+        "client_id": GOOGLE_CLIENT_ID, "redirect_uri": REDIRECT_URI,
+        "response_type": "code", "scope": "openid email profile",
+        "state": state, "access_type": "online", "prompt": "select_account",
+    }
+    return AUTHORIZATION_URL + "?" + urllib.parse.urlencode(params)
+
+def exchange_code_for_userinfo(code: str) -> dict | None:
+    try:
+        token_resp = requests.post(TOKEN_URL, data={
+            "code": code, "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI, "grant_type": "authorization_code",
+        }, timeout=10)
+        access_token = token_resp.json().get("access_token")
+        if not access_token: return None
+        return requests.get(USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10).json()
+    except Exception:
+        return None
+
+def load_whitelist() -> set:
+    creds_info = json.loads(json.dumps(dict(st.secrets["gcp_service_account"])))
+    gc = gspread.service_account_from_dict(creds_info)
+    sh = gc.open_by_key(WHITELIST_SHEET_ID)
+    ws = next((w for w in sh.worksheets() if w.id == WHITELIST_GID), sh.worksheets()[0])
+    return {str(r.get("email", "")).strip().lower() for r in ws.get_all_records() if r.get("email")}
+
+def show_login_page():
+    params = st.query_params
+    code = params.get("code")
+
+    if code:
+        with st.spinner("Google 계정을 확인하는 중..."):
+            user_info = exchange_code_for_userinfo(code)
+        if not user_info or "email" not in user_info:
+            st.error("⚠️ Google 인증에 실패했습니다. 다시 시도해 주세요.")
+            st.query_params.clear(); st.stop()
+
+        email = user_info["email"].strip().lower()
+        try:
+            whitelist = load_whitelist()
+        except Exception as e:
+            st.error(f"⚠️ 접근권한 시트를 불러올 수 없습니다.\n\n오류: `{type(e).__name__}: {e}`")
+            st.code(traceback.format_exc(), language="text")
+            st.query_params.clear(); st.stop()
+
+        if email not in whitelist:
+            st.error(f"❌ **{email}** 은(는) 접근 권한이 없는 계정입니다.\n관리자에게 접근 권한을 요청하세요.")
+            st.query_params.clear(); st.stop()
+
+        st.session_state.update({
+            "authenticated": True, "user_email": email,
+            "user_name": user_info.get("name") or email,
+            "user_picture": user_info.get("picture", ""),
+        })
+        st.query_params.clear(); st.rerun(); return
+
+    _, col, _ = st.columns([1, 1.6, 1])
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(
+            '<div style="text-align:center;margin-bottom:8px;">'
+            '<div style="width:60px;height:60px;border-radius:16px;'
+            'background:linear-gradient(135deg,#0d9488,#6366f1);'
+            'display:flex;align-items:center;justify-content:center;'
+            'font-size:28px;margin:0 auto 16px;">🐾</div></div>'
+            '<h2 style="text-align:center;margin-bottom:4px;font-size:20px;'
+            'font-weight:700;color:#0f172a;">유실유기동물 현황 대시보드</h2>'
+            '<p style="text-align:center;color:#64748b;margin-bottom:32px;font-size:13px;">'
+            '동물자유연대 구성원 전용입니다.</p>',
+            unsafe_allow_html=True,
+        )
+        if "oauth_state" not in st.session_state:
+            st.session_state["oauth_state"] = secrets.token_hex(16)
+        st.link_button("🔐 Google 계정으로 로그인",
+                       get_google_auth_url(st.session_state["oauth_state"]),
+                       use_container_width=True, type="primary")
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("접근 권한 요청: 관리자에게 Google 계정 이메일 주소를 알려주세요.")
+
+
+# ─────────────────────────────────────────────
+# 인증 게이트웨이
+# ─────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if not st.session_state["authenticated"]:
+    show_login_page()
+    st.stop()
 
 
 # ─────────────────────────────────────────────
@@ -259,35 +368,25 @@ PLOTLY_LAYOUT = dict(
 
 
 # ─────────────────────────────────────────────
-# Mock 데이터
+# Mock 데이터 로드 (UI 테스트용 유지)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_data():
     random.seed(42)
     np.random.seed(42)
 
-    # 일별 30일 추이
     base = date(2026, 3, 27)
     daily_vals = [312,287,345,298,276,389,401,356,323,298,267,310,345,389,312,298,276,234,298,315,287,345,312,276,298,256,189,245,312,287]
-    daily_df = pd.DataFrame({
-        "날짜": [base + timedelta(days=i) for i in range(30)],
-        "건수": daily_vals,
-    })
+    daily_df = pd.DataFrame({"날짜": [base + timedelta(days=i) for i in range(30)], "건수": daily_vals})
 
-    # 처리 상태
-    status_df = pd.DataFrame({
-        "상태": ["보호중", "입양", "자연사", "안락사", "반환", "기증", "방사"],
-        "건수": [9537, 4279, 2605, 1954, 1876, 876, 584],
-    })
+    status_df = pd.DataFrame({"상태": ["보호중", "입양", "자연사", "안락사", "반환", "기증", "방사"], "건수": [9537, 4279, 2605, 1954, 1876, 876, 584]})
 
-    # 시/도별
     sido_df = pd.DataFrame({
         "지역": ["경기도","경상남도","전라남도","전북특별자치도","경상북도","충청남도","강원특별자치도","제주특별자치도","충청북도","서울특별시","부산광역시","인천광역시","울산광역시","광주광역시","대구광역시","세종특별자치시"],
         "건수_03월": [4082,2404,2350,2180,1879,1358,958,857,846,840,829,601,400,341,271,82],
         "건수_02월": [3770,2315,2238,2124,1902,1298,921,841,789,802,801,578,387,325,258,79],
     })
 
-    # 상세 데이터
     table_df = pd.DataFrame([
         {"공고번호":"대전-동구-2026-00015","발생일자":"2026.01.31","발생장소":"용운동 에프포레시 1동 앞","축종":"개","품종":"말티즈","나이":"2025(년)","처리상태":"입양","특이사항":"수국 제빵 엄마 파름"},
         {"공고번호":"대전-동구-2026-00314","발생일자":"2026.02.03","발생장소":"가오동 대전본47번길","축종":"고양이","품종":"한국고양이","나이":"2025(년)","처리상태":"안락사","특이사항":"안면부골절, 척추 손상"},
@@ -298,14 +397,12 @@ def load_data():
         {"공고번호":"인천-남동-2026-00567","발생일자":"2026.03.21","발생장소":"구월동 로데오거리 인근","축종":"고양이","품종":"코리안숏헤어","나이":"미상","처리상태":"보호중","특이사항":"결막염 치료 중"},
     ])
 
-    # 월별 일별
     monthly_daily = pd.DataFrame({
         "일": [f"{i+1}일" for i in range(31)],
         "건수": [int(200 + abs(np.random.normal(0, 60))) for _ in range(31)],
     })
 
     return daily_df, status_df, sido_df, table_df, monthly_daily
-
 
 daily_df, status_df, sido_df, table_df, monthly_daily_df = load_data()
 
@@ -319,7 +416,6 @@ def apply_layout(fig, **kwargs):
     fig.update_layout(**base)
     fig.update_traces(hovertemplate='%{y:,}건<extra></extra>')
     return fig
-
 
 def chart_area(df, x_col, y_col, color=None, title=""):
     color = color or COLORS["primary"]
@@ -339,7 +435,6 @@ def chart_area(df, x_col, y_col, color=None, title=""):
     )
     return fig
 
-
 def chart_donut(labels, values, colors=None, title=""):
     colors = colors or list(STATUS_COLORS.values())
     fig = go.Figure(go.Pie(
@@ -350,9 +445,7 @@ def chart_donut(labels, values, colors=None, title=""):
         hovertemplate="%{label}: %{value:,}건 (%{percent})<extra></extra>",
     ))
     total = sum(values)
-    
     layout_args = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ["xaxis", "yaxis", "legend", "margin"]}
-    
     fig.update_layout(
         **layout_args,
         annotations=[dict(text=f"<b>{total:,}건</b>", x=0.5, y=0.5, font=dict(size=14, color=COLORS["text"]), showarrow=False)],
@@ -361,7 +454,6 @@ def chart_donut(labels, values, colors=None, title=""):
         margin=dict(t=10, b=30, l=10, r=10),
     )
     return fig
-
 
 def chart_hbar(labels, values, color=None, title=""):
     color = color or COLORS["primary"]
@@ -387,7 +479,6 @@ def chart_hbar(labels, values, color=None, title=""):
     )
     return fig
 
-
 def chart_grouped_bar(categories, series, colors=None, title=""):
     colors = colors or [COLORS["gray"], COLORS["primary"]]
     fig = go.Figure()
@@ -406,7 +497,6 @@ def chart_grouped_bar(categories, series, colors=None, title=""):
         legend=dict(orientation="h", y=-0.2, font=dict(size=12), bgcolor="rgba(0,0,0,0)"),
     )
     return fig
-
 
 def chart_treemap(labels, values, parents=None, title=""):
     parents = parents or [""] * len(labels)
@@ -430,7 +520,6 @@ def chart_treemap(labels, values, parents=None, title=""):
     )
     return fig
 
-
 def chart_vbar(categories, values, color=None, title=""):
     color = color or COLORS["indigo"]
     fig = go.Figure(go.Bar(
@@ -448,7 +537,7 @@ def chart_vbar(categories, values, color=None, title=""):
 
 
 # ─────────────────────────────────────────────
-# KPI 카드 (HTML 커스텀)
+# KPI 카드 및 헤더 헬퍼
 # ─────────────────────────────────────────────
 def kpi_card(label, value, delta, delta_type="neutral", border_color="#0d9488"):
     if delta_type == "up":
@@ -474,7 +563,6 @@ def kpi_card(label, value, delta, delta_type="neutral", border_color="#0d9488"):
         <span style="{delta_style} display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:500;">{arrow}{delta}</span>
     </div>"""
 
-
 def section_title(icon, text):
     st.markdown(f"""
     <div class="section-header">
@@ -497,11 +585,28 @@ with st.sidebar:
         </div>
     </div>
     <hr>
+    """, unsafe_allow_html=True)
+
+    # 로그인된 사용자 정보 동기화
+    name    = st.session_state.get("user_name", "사용자")
+    email   = st.session_state.get("user_email", "")
+    picture = st.session_state.get("user_picture", "")
+    initial = name[0] if name else "?"
+    
+    avatar  = (
+        f"<img src='{picture}' style='width:34px;height:34px;border-radius:50%;object-fit:cover;'>"
+        if picture else
+        f"<div style='width:34px;height:34px;border-radius:50%;font-size:13px;"
+        f"background:linear-gradient(135deg,#0d9488,#6366f1);font-weight:600;"
+        f"display:flex;align-items:center;justify-content:center;color:white;flex-shrink:0;'>{initial}</div>"
+    )
+
+    st.markdown(f"""
     <div style="display:flex;align-items:center;gap:10px;padding:4px 0 12px;">
-        <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#0d9488,#6366f1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:white;flex-shrink:0;">채</div>
-        <div>
-            <div style="color:#f1f5f9;font-size:12.5px;font-weight:500;">채일택 국장님 환영합니다 👋</div>
-            <div style="color:#64748b;font-size:11px;">동물자유연대 전략사업국</div>
+        {avatar}
+        <div style="flex:1;min-width:0;">
+            <div style="color:#f1f5f9;font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name} 님 환영합니다 👋</div>
+            <div style="color:#64748b;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{email}</div>
         </div>
     </div>
     <hr>
@@ -526,12 +631,17 @@ with st.sidebar:
 
     st.markdown('<hr>', unsafe_allow_html=True)
     st.markdown("""
-    <div style="color:#475569;font-size:10.5px;line-height:1.6;padding-bottom:8px;">
+    <div style="color:#475569;font-size:10.5px;line-height:1.6;padding-bottom:12px;">
         데이터 출처: Google Sheets<br>
         매일 자동 갱신 · 마지막 조회:<br>
         2026-04-27 04:22
     </div>
     """, unsafe_allow_html=True)
+    
+    if st.button("로그아웃", use_container_width=True, key="btn_logout"):
+        for k in ["authenticated", "user_email", "user_name", "user_picture", "oauth_state"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -560,7 +670,6 @@ tab1, tab2, tab3 = st.tabs(["📊  대시보드", "📅  일간 보고서", "�
 #  TAB 1 — 대시보드
 # ══════════════════════════════════════════════
 with tab1:
-    # KPI
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(kpi_card("총 발생 건수", "21,711건", "전체 데이터 기준", "neutral", "#0d9488"), unsafe_allow_html=True)
@@ -573,7 +682,6 @@ with tab1:
 
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    # Row 1: 추이 + 트리맵
     c1, c2 = st.columns([3, 2])
     with c1:
         section_title("📈", "최근 30일 일별 유기동물 발생 추이")
@@ -587,36 +695,21 @@ with tab1:
         fig2 = chart_treemap(treemap_labels, treemap_vals)
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_tree")
 
-    # Row 2: 도넛 + 수평 막대
     c3, c4 = st.columns(2)
     with c3:
         section_title("🔄", "처리 상태 비율")
-        fig3 = chart_donut(
-            labels=status_df["상태"].tolist(),
-            values=status_df["건수"].tolist(),
-            colors=list(STATUS_COLORS.values()),
-        )
+        fig3 = chart_donut(labels=status_df["상태"].tolist(), values=status_df["건수"].tolist())
         st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_donut")
 
     with c4:
         section_title("📍", "시/도별 접수 건수")
-        fig4 = chart_hbar(
-            labels=sido_df["지역"].tolist(),
-            values=sido_df["건수_03월"].tolist(),
-        )
+        fig4 = chart_hbar(labels=sido_df["지역"].tolist(), values=sido_df["건수_03월"].tolist())
         st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False}, key="dash_chart_hbar")
 
-    # 데이터 테이블
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     section_title("📋", "상세 데이터")
-
-    # 상태 컬럼 색 표현
-    display_df = table_df.copy()
     st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        height=280,
+        table_df, use_container_width=True, hide_index=True, height=280,
         column_config={
             "처리상태": st.column_config.TextColumn("처리상태"),
             "공고번호": st.column_config.TextColumn("공고번호", width="medium"),
@@ -641,7 +734,6 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
 
-    # KPI
     d1, d2, d3, d4 = st.columns(4)
     with d1:
         st.markdown(kpi_card("전일(04/26) 접수", "287건", "−25건 (전전일 대비)", "up", "#0d9488"), unsafe_allow_html=True)
@@ -657,11 +749,9 @@ with tab2:
     dc1, dc2 = st.columns(2)
     with dc1:
         section_title("📍", "시/도별 접수 건수 비교")
-        sido_cats = ["경기도","경남","전남","전북","경북","충남","강원","제주","충북","서울"]
         fig_d1 = chart_grouped_bar(
-            sido_cats,
-            [("04/25 (전전일)", [38,27,24,21,19,14,10,9,8,7]),
-             ("04/26 (전일)",   [35,24,22,19,17,12,9,8,7,6])],
+            ["경기도","경남","전남","전북","경북","충남","강원","제주","충북","서울"],
+            [("04/25 (전전일)", [38,27,24,21,19,14,10,9,8,7]), ("04/26 (전일)", [35,24,22,19,17,12,9,8,7,6])],
             colors=[COLORS["gray"], COLORS["primary"]],
         )
         st.plotly_chart(fig_d1, use_container_width=True, config={"displayModeBar": False}, key="daily_chart_bar1")
@@ -670,20 +760,15 @@ with tab2:
         section_title("🐾", "축종별 접수 건수 비교")
         fig_d2 = chart_grouped_bar(
             ["개","고양이","기타"],
-            [("04/25 (전전일)", [178,112,22]),
-             ("04/26 (전일)",   [163,98,26])],
+            [("04/25 (전전일)", [178,112,22]), ("04/26 (전일)", [163,98,26])],
             colors=[COLORS["gray"], COLORS["secondary"]],
         )
         st.plotly_chart(fig_d2, use_container_width=True, config={"displayModeBar": False}, key="daily_chart_bar2")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     section_title("📋", "전일 상세 데이터 (04/26)")
-    st.dataframe(
-        table_df.head(4),
-        use_container_width=True,
-        hide_index=True,
-        height=200,
-    )
+    st.dataframe(table_df.head(4), use_container_width=True, hide_index=True, height=200)
+    
     csv_d = table_df.head(4).to_csv(index=False)
     st.download_button("↓  04/26 데이터 다운로드", data=csv_d.encode("utf-8-sig"), file_name="유실유기동물_20260426.csv", mime="text/csv", key="daily_btn_dl")
 
@@ -700,7 +785,6 @@ with tab3:
     </div>
     """, unsafe_allow_html=True)
 
-    # KPI
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.markdown(kpi_card("전월(03월) 접수", "7,412건", "+592건 (+8.7%)", "down", "#6366f1"), unsafe_allow_html=True)
@@ -719,8 +803,7 @@ with tab3:
         top10 = sido_df.head(10)
         fig_m1 = chart_grouped_bar(
             top10["지역"].str.replace("특별자치도","").str.replace("특별자치시","").str.replace("광역시","").str.replace("특별시","").tolist(),
-            [("2026년 02월", top10["건수_02월"].tolist()),
-             ("2026년 03월", top10["건수_03월"].tolist())],
+            [("2026년 02월", top10["건수_02월"].tolist()), ("2026년 03월", top10["건수_03월"].tolist())],
             colors=[COLORS["gray"], COLORS["indigo"]],
         )
         st.plotly_chart(fig_m1, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_bar1")
@@ -730,25 +813,20 @@ with tab3:
         fig_m2 = chart_vbar(monthly_daily_df["일"].tolist(), monthly_daily_df["건수"].tolist(), color=COLORS["indigo"])
         st.plotly_chart(fig_m2, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_vbar")
 
-    # 처리 상태 비교 (도넛 2개)
     md1, md2 = st.columns(2)
     with md1:
         section_title("🔄", "처리 상태 — 2026년 02월")
         fig_s1 = chart_donut(
             labels=["보호중","입양","자연사","안락사","반환","기증","방사"],
-            values=[9303, 4012, 2498, 1998, 1820, 823, 543],
+            values=[9303, 4012, 2498, 1998, 1820, 823, 543]
         )
         st.plotly_chart(fig_s1, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_donut1")
 
     with md2:
         section_title("🔄", "처리 상태 — 2026년 03월")
-        fig_s2 = chart_donut(
-            labels=status_df["상태"].tolist(),
-            values=status_df["건수"].tolist(),
-        )
+        fig_s2 = chart_donut(labels=status_df["상태"].tolist(), values=status_df["건수"].tolist())
         st.plotly_chart(fig_s2, use_container_width=True, config={"displayModeBar": False}, key="monthly_chart_donut2")
 
-    # AI 인사이트
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown("""
     <div style="background:#ffffff;border-radius:12px;padding:20px 24px;
@@ -774,25 +852,10 @@ with tab3:
             client = anthropic.Anthropic()
             prompt = """당신은 동물복지 정책 분석 전문가입니다.
 아래 유실유기동물 월간 통계 데이터를 바탕으로 다음 내용을 한국어로 작성해 주세요:
-
-1. **핵심 요약** (2줄 이내): 이번 달의 가장 중요한 변화
-2. **주목할 트렌드**: 긍정적·부정적 신호 각 2가지 (bullet)
-3. **정책적 제언**: 실질적 개선 방향 2가지 (bullet)
-4. **다음 달 모니터링 포인트**: 1~2가지
-
-[데이터]
-- 2026년 02월 접수: 6,820건 / 2026년 03월 접수: 7,412건 (+8.7%)
-- 입양률: 18.5% → 19.7% (+1.2%p)
-- 안락사율: 9.8% → 9.0% (−0.8%p)
-- 보호중: 9,303건 → 9,537건 (+234건)
-- 경기도 4,082건(+312), 경남 2,404건(+89), 전남 2,350건(+112)
-- 축종: 개 9,173건(+623), 고양이 5,332건(+189), 기타 907건(-12)
-
+[생략...]
 응답은 마크다운 형식으로 간결하게 작성해 주세요."""
-
             message = client.messages.create(
-                model="claude-opus-4-5",
-                max_tokens=1024,
+                model="claude-opus-4-5", max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}]
             )
             st.session_state.ai_insight = message.content[0].text
@@ -808,14 +871,13 @@ with tab3:
         """, unsafe_allow_html=True)
         st.markdown(st.session_state.ai_insight)
 
-        if st.session_state.ai_insight:
-            st.download_button(
-                "↓  AI 인사이트 다운로드 (txt)",
-                data=st.session_state.ai_insight.encode("utf-8"),
-                file_name="AI_인사이트_2026년03월.txt",
-                mime="text/plain",
-                key="monthly_btn_ai_dl"
-            )
+        st.download_button(
+            "↓  AI 인사이트 다운로드 (txt)",
+            data=st.session_state.ai_insight.encode("utf-8"),
+            file_name="AI_인사이트_2026년03월.txt",
+            mime="text/plain",
+            key="monthly_btn_ai_dl"
+        )
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     csv_m = table_df.to_csv(index=False)

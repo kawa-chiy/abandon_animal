@@ -337,11 +337,12 @@ def get_bq_client():
 
 
 @st.cache_data(ttl=3600)
-def run_bq_query(query: str, params=None) -> pd.DataFrame:
+def run_bq_query(query: str, _params=None):
     client = get_bq_client()
-    job_config = bigquery.QueryJobConfig(query_parameters=params or [])
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=_params or []
+    )
     return client.query(query, job_config=job_config).to_dataframe()
-
 
 def _filter_sql(date_from, date_to, sido_sel, status_sel):
     where = ["happen_date BETWEEN @date_from AND @date_to"]

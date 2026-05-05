@@ -333,15 +333,19 @@ if not st.session_state["authenticated"]:
 def get_bq_client():
     creds_info = dict(st.secrets["gcp_service_account"])
     credentials = service_account.Credentials.from_service_account_info(creds_info)
-    return bigquery.Client(credentials=credentials, project=credentials.project_id)
+    return bigquery.Client(credentials=credentials, project=PROJECT_ID)
 
 
-@st.cache_data(ttl=3600)
-def run_bq_query(query: str, _params=None):
+def run_bq_query(query: str, params=None) -> pd.DataFrame:
+    """Run a BigQuery SQL query.
+
+    이 함수에는 Streamlit 캐시를 걸지 않습니다.
+    BigQuery QueryParameter 객체는 Streamlit 캐시가 해시하기 어렵고,
+    params를 캐시 키에서 제외하면 필터값이 달라도 같은 결과가 재사용될 수 있습니다.
+    대신 load_dashboard_data/load_daily_report_data/load_monthly_report_data에만 캐시를 둡니다.
+    """
     client = get_bq_client()
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=_params or []
-    )
+    job_config = bigquery.QueryJobConfig(query_parameters=params or [])
     return client.query(query, job_config=job_config).to_dataframe()
 
 def _filter_sql(date_from, date_to, sido_sel, status_sel):

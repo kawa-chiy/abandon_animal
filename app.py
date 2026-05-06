@@ -380,8 +380,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
           COUNT(*) AS 건수
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 상태
-        ORDER BY 건수 DESC
+        GROUP BY 1
+        ORDER BY 2 DESC
     """
 
     sido_query = f"""
@@ -390,8 +390,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
           COUNT(*) AS 건수
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 지역
-        ORDER BY 건수 DESC
+        GROUP BY 1
+        ORDER BY 2 DESC
     """
 
     breed_query = f"""
@@ -400,8 +400,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
           COUNT(*) AS 건수
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 품종
-        ORDER BY 건수 DESC
+        GROUP BY 1
+        ORDER BY 2 DESC
         LIMIT 12
     """
 
@@ -456,8 +456,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
           COUNT(*) AS 건수
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 축종
-        ORDER BY 건수 DESC
+        GROUP BY 1
+        ORDER BY 2 DESC
     """
 
     return {
@@ -509,8 +509,8 @@ def load_daily_report_data(target_date, sido_sel, status_sel):
           SUM(IF(happen_date = @target_date, 1, 0)) AS 기준일
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 지역
-        ORDER BY 기준일 DESC, 전일 DESC
+        GROUP BY 1
+        ORDER BY 3 DESC, 2 DESC
         LIMIT 10
     """
 
@@ -521,8 +521,8 @@ def load_daily_report_data(target_date, sido_sel, status_sel):
           SUM(IF(happen_date = @target_date, 1, 0)) AS 기준일
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 축종
-        ORDER BY 기준일 DESC, 전일 DESC
+        GROUP BY 1
+        ORDER BY 3 DESC, 2 DESC
     """
 
     detail_query = f"""
@@ -594,8 +594,8 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
           SUM(IF(happen_date >= @current_month_start, 1, 0)) AS 이번월
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY 지역
-        ORDER BY 이번월 DESC, 전월 DESC
+        GROUP BY 1
+        ORDER BY 3 DESC, 2 DESC
         LIMIT 10
     """
 
@@ -616,8 +616,8 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
           COUNT(*) AS 건수
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY period, 상태
-        ORDER BY period, 건수 DESC
+        GROUP BY 1, 2
+        ORDER BY 1, 3 DESC
     """
 
     return {

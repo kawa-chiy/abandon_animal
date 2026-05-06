@@ -727,13 +727,14 @@ PLOTLY_LAYOUT = dict(
 # ─────────────────────────────────────────────
 def empty_figure(message="표시할 데이터가 없습니다"):
     fig = go.Figure()
-    fig.update_layout(
-        **PLOTLY_LAYOUT,
+    layout = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ("xaxis", "yaxis")}
+    layout.update(
         height=240,
         annotations=[dict(text=message, x=0.5, y=0.5, showarrow=False, font=dict(size=13, color=COLORS["text2"]))],
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
     )
+    fig.update_layout(**layout)
     return fig
 
 

@@ -435,8 +435,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
           COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY EXTRACT(DAY FROM happen_date)
-        ORDER BY EXTRACT(DAY FROM happen_date)
+        GROUP BY 1
+        ORDER BY CAST(day_num AS INT64)
     """
 
     kpi_query = f"""
@@ -636,8 +636,8 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
           COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE happen_date BETWEEN @current_month_start AND @date_to
-        GROUP BY EXTRACT(DAY FROM happen_date)
-        ORDER BY EXTRACT(DAY FROM happen_date)
+        GROUP BY 1
+        ORDER BY CAST(day_num AS INT64)
     """
 
     status_month_query = f"""

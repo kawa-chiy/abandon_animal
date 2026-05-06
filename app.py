@@ -366,8 +366,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     daily_query = f"""
         SELECT
-          happen_date AS 날짜,
-          COUNT(*) AS 건수
+          happen_date AS dt,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY happen_date
@@ -376,8 +376,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     status_query = f"""
         SELECT
-          COALESCE(process_state, '미상') AS 상태,
-          COUNT(*) AS 건수
+          COALESCE(process_state, '미상') AS status_name,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -386,8 +386,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     sido_query = f"""
         SELECT
-          COALESCE(sido, '미상') AS 지역,
-          COUNT(*) AS 건수
+          COALESCE(sido, '미상') AS region,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -396,8 +396,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     breed_query = f"""
         SELECT
-          CONCAT(COALESCE(breed, '미상'), '(', COALESCE(animal_type, '미상'), ')') AS 품종,
-          COUNT(*) AS 건수
+          CONCAT(COALESCE(breed, '미상'), '(', COALESCE(animal_type, '미상'), ')') AS breed_name,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -407,22 +407,22 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     table_query = f"""
         SELECT
-          notice_no AS 공고번호,
-          FORMAT_DATE('%Y.%m.%d', happen_date) AS 발생일자,
-          happen_place AS 발생장소,
-          animal_type AS 축종,
-          breed AS 품종,
-          age AS 나이,
-          FORMAT_DATE('%Y.%m.%d', notice_start_date) AS 공고시작일,
-          FORMAT_DATE('%Y.%m.%d', notice_end_date) AS 공고종료일,
-          process_state AS 처리상태,
-          neuter_status AS 중성화여부,
-          special_mark AS 특이사항,
-          care_name AS 보호소명,
-          org_name AS 관할기관,
-          sido AS 시도,
-          sigungu AS 시군구,
-          end_reason AS 종료사유
+          notice_no AS col_notice_no,
+          FORMAT_DATE('%Y.%m.%d', happen_date) AS col_happen_date,
+          happen_place AS col_happen_place,
+          animal_type AS col_animal_type,
+          breed AS col_breed,
+          age AS col_age,
+          FORMAT_DATE('%Y.%m.%d', notice_start_date) AS col_notice_start,
+          FORMAT_DATE('%Y.%m.%d', notice_end_date) AS col_notice_end,
+          process_state AS col_process_state,
+          neuter_status AS col_neuter,
+          special_mark AS col_special,
+          care_name AS col_care_name,
+          org_name AS col_org_name,
+          sido AS col_sido,
+          sigungu AS col_sigungu,
+          end_reason AS col_end_reason
         FROM {TABLE_NAME}
         WHERE {where_sql}
         ORDER BY happen_date DESC, notice_no DESC
@@ -431,8 +431,8 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     monthly_daily_query = f"""
         SELECT
-          CONCAT(CAST(EXTRACT(DAY FROM happen_date) AS STRING), '일') AS 일,
-          COUNT(*) AS 건수
+          CAST(EXTRACT(DAY FROM happen_date) AS STRING) AS day_num,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY EXTRACT(DAY FROM happen_date)
@@ -452,23 +452,41 @@ def load_dashboard_data(date_from, date_to, sido_sel, status_sel):
 
     animal_type_query = f"""
         SELECT
-          COALESCE(animal_type, '미상') AS 축종,
-          COUNT(*) AS 건수
+          COALESCE(animal_type, '미상') AS animal_type_name,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
         ORDER BY 2 DESC
     """
 
+    daily_df = run_bq_query(daily_query, params).rename(columns={"dt": "날짜", "cnt": "건수"})
+    status_df = run_bq_query(status_query, params).rename(columns={"status_name": "상태", "cnt": "건수"})
+    sido_df = run_bq_query(sido_query, params).rename(columns={"region": "지역", "cnt": "건수"})
+    breed_df = run_bq_query(breed_query, params).rename(columns={"breed_name": "품종", "cnt": "건수"})
+    table_df = run_bq_query(table_query, params).rename(columns={
+        "col_notice_no": "공고번호", "col_happen_date": "발생일자", "col_happen_place": "발생장소",
+        "col_animal_type": "축종", "col_breed": "품종", "col_age": "나이",
+        "col_notice_start": "공고시작일", "col_notice_end": "공고종료일",
+        "col_process_state": "처리상태", "col_neuter": "중성화여부", "col_special": "특이사항",
+        "col_care_name": "보호소명", "col_org_name": "관할기관",
+        "col_sido": "시도", "col_sigungu": "시군구", "col_end_reason": "종료사유",
+    })
+    monthly_daily_raw = run_bq_query(monthly_daily_query, params)
+    monthly_daily_raw["day_num"] = monthly_daily_raw["day_num"] + "일"
+    monthly_daily_df = monthly_daily_raw.rename(columns={"day_num": "일", "cnt": "건수"})
+    kpi_df = run_bq_query(kpi_query, params)
+    animal_type_df = run_bq_query(animal_type_query, params).rename(columns={"animal_type_name": "축종", "cnt": "건수"})
+
     return {
-        "daily_df": run_bq_query(daily_query, params),
-        "status_df": run_bq_query(status_query, params),
-        "sido_df": run_bq_query(sido_query, params),
-        "breed_df": run_bq_query(breed_query, params),
-        "table_df": run_bq_query(table_query, params),
-        "monthly_daily_df": run_bq_query(monthly_daily_query, params),
-        "kpi_df": run_bq_query(kpi_query, params),
-        "animal_type_df": run_bq_query(animal_type_query, params),
+        "daily_df": daily_df,
+        "status_df": status_df,
+        "sido_df": sido_df,
+        "breed_df": breed_df,
+        "table_df": table_df,
+        "monthly_daily_df": monthly_daily_df,
+        "kpi_df": kpi_df,
+        "animal_type_df": animal_type_df,
     }
 
 
@@ -504,9 +522,9 @@ def load_daily_report_data(target_date, sido_sel, status_sel):
 
     sido_compare_query = f"""
         SELECT
-          COALESCE(sido, '미상') AS 지역,
-          SUM(IF(happen_date = @prev_date, 1, 0)) AS 전일,
-          SUM(IF(happen_date = @target_date, 1, 0)) AS 기준일
+          COALESCE(sido, '미상') AS region,
+          SUM(IF(happen_date = @prev_date, 1, 0)) AS prev_cnt,
+          SUM(IF(happen_date = @target_date, 1, 0)) AS target_cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -516,9 +534,9 @@ def load_daily_report_data(target_date, sido_sel, status_sel):
 
     animal_compare_query = f"""
         SELECT
-          COALESCE(animal_type, '미상') AS 축종,
-          SUM(IF(happen_date = @prev_date, 1, 0)) AS 전일,
-          SUM(IF(happen_date = @target_date, 1, 0)) AS 기준일
+          COALESCE(animal_type, '미상') AS animal_name,
+          SUM(IF(happen_date = @prev_date, 1, 0)) AS prev_cnt,
+          SUM(IF(happen_date = @target_date, 1, 0)) AS target_cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -527,27 +545,40 @@ def load_daily_report_data(target_date, sido_sel, status_sel):
 
     detail_query = f"""
         SELECT
-          notice_no AS 공고번호,
-          FORMAT_DATE('%Y.%m.%d', happen_date) AS 발생일자,
-          happen_place AS 발생장소,
-          animal_type AS 축종,
-          breed AS 품종,
-          age AS 나이,
-          process_state AS 처리상태,
-          special_mark AS 특이사항,
-          care_name AS 보호소명,
-          org_name AS 관할기관
+          notice_no AS col_notice_no,
+          FORMAT_DATE('%Y.%m.%d', happen_date) AS col_happen_date,
+          happen_place AS col_happen_place,
+          animal_type AS col_animal_type,
+          breed AS col_breed,
+          age AS col_age,
+          process_state AS col_process_state,
+          special_mark AS col_special,
+          care_name AS col_care_name,
+          org_name AS col_org_name
         FROM {TABLE_NAME}
         WHERE happen_date = @target_date
         ORDER BY notice_no DESC
         LIMIT 300
     """
 
+    sido_compare_df = run_bq_query(sido_compare_query, params).rename(columns={
+        "region": "지역", "prev_cnt": "전일", "target_cnt": "기준일"
+    })
+    animal_compare_df = run_bq_query(animal_compare_query, params).rename(columns={
+        "animal_name": "축종", "prev_cnt": "전일", "target_cnt": "기준일"
+    })
+    detail_df = run_bq_query(detail_query, params).rename(columns={
+        "col_notice_no": "공고번호", "col_happen_date": "발생일자",
+        "col_happen_place": "발생장소", "col_animal_type": "축종",
+        "col_breed": "품종", "col_age": "나이", "col_process_state": "처리상태",
+        "col_special": "특이사항", "col_care_name": "보호소명", "col_org_name": "관할기관",
+    })
+
     return {
         "summary_df": run_bq_query(daily_summary_query, params),
-        "sido_compare_df": run_bq_query(sido_compare_query, params),
-        "animal_compare_df": run_bq_query(animal_compare_query, params),
-        "detail_df": run_bq_query(detail_query, params),
+        "sido_compare_df": sido_compare_df,
+        "animal_compare_df": animal_compare_df,
+        "detail_df": detail_df,
         "target_date": target_date,
         "prev_date": prev_date,
     }
@@ -584,14 +615,14 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
           COUNTIF(process_state = '보호중') AS protected_count
         FROM {TABLE_NAME}
         WHERE {where_sql}
-        GROUP BY period
+        GROUP BY 1
     """
 
     sido_month_query = f"""
         SELECT
-          COALESCE(sido, '미상') AS 지역,
-          SUM(IF(happen_date < @current_month_start, 1, 0)) AS 전월,
-          SUM(IF(happen_date >= @current_month_start, 1, 0)) AS 이번월
+          COALESCE(sido, '미상') AS region,
+          SUM(IF(happen_date < @current_month_start, 1, 0)) AS prev_cnt,
+          SUM(IF(happen_date >= @current_month_start, 1, 0)) AS cur_cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1
@@ -601,8 +632,8 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
 
     month_daily_query = f"""
         SELECT
-          CONCAT(CAST(EXTRACT(DAY FROM happen_date) AS STRING), '일') AS 일,
-          COUNT(*) AS 건수
+          CAST(EXTRACT(DAY FROM happen_date) AS STRING) AS day_num,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE happen_date BETWEEN @current_month_start AND @date_to
         GROUP BY EXTRACT(DAY FROM happen_date)
@@ -611,20 +642,31 @@ def load_monthly_report_data(date_to, sido_sel, status_sel):
 
     status_month_query = f"""
         SELECT
-          IF(happen_date < @current_month_start, '전월', '이번월') AS period,
-          COALESCE(process_state, '미상') AS 상태,
-          COUNT(*) AS 건수
+          IF(happen_date < @current_month_start, 'prev', 'current') AS period,
+          COALESCE(process_state, '미상') AS status_name,
+          COUNT(*) AS cnt
         FROM {TABLE_NAME}
         WHERE {where_sql}
         GROUP BY 1, 2
         ORDER BY 1, 3 DESC
     """
 
+    sido_month_df = run_bq_query(sido_month_query, params).rename(columns={
+        "region": "지역", "prev_cnt": "전월", "cur_cnt": "이번월"
+    })
+    month_daily_raw = run_bq_query(month_daily_query, params)
+    month_daily_raw["day_num"] = month_daily_raw["day_num"] + "일"
+    month_daily_df = month_daily_raw.rename(columns={"day_num": "일", "cnt": "건수"})
+    status_month_raw = run_bq_query(status_month_query, params)
+    # period 값을 한글로 변환하여 기존 코드와 호환
+    status_month_raw["period"] = status_month_raw["period"].map({"prev": "전월", "current": "이번월"})
+    status_month_df = status_month_raw.rename(columns={"status_name": "상태", "cnt": "건수"})
+
     return {
         "monthly_kpi_df": run_bq_query(monthly_kpi_query, params),
-        "sido_month_df": run_bq_query(sido_month_query, params),
-        "month_daily_df": run_bq_query(month_daily_query, params),
-        "status_month_df": run_bq_query(status_month_query, params),
+        "sido_month_df": sido_month_df,
+        "month_daily_df": month_daily_df,
+        "status_month_df": status_month_df,
         "current_month_start": current_month_start,
         "prev_month_start": prev_month_start,
         "prev_month_end": prev_month_end,

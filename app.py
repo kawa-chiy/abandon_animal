@@ -739,7 +739,8 @@ def empty_figure(message="표시할 데이터가 없습니다"):
 
 
 def apply_layout(fig, **kwargs):
-    base = dict(**PLOTLY_LAYOUT)
+    # PLOTLY_LAYOUT을 기본값으로 하되, kwargs로 넘긴 키는 완전히 덮어씀
+    base = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in kwargs}
     base.update(kwargs)
     fig.update_layout(**base)
     return fig
@@ -780,9 +781,11 @@ def chart_donut(labels, values, colors=None):
         hovertemplate="%{label}: %{value:,}건 (%{percent})<extra></extra>",
     ))
     total = sum(values)
-    layout_args = {k: v for k, v in PLOTLY_LAYOUT.items() if k not in ["xaxis", "yaxis", "legend", "margin"]}
     fig.update_layout(
-        **layout_args,
+        font=PLOTLY_LAYOUT["font"],
+        paper_bgcolor=PLOTLY_LAYOUT["paper_bgcolor"],
+        plot_bgcolor=PLOTLY_LAYOUT["plot_bgcolor"],
+        hoverlabel=PLOTLY_LAYOUT["hoverlabel"],
         annotations=[dict(text=f"<b>{total:,}건</b>", x=0.5, y=0.5, font=dict(size=14, color=COLORS["text"]), showarrow=False)],
         legend=dict(orientation="h", y=-0.12, font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
         height=290,
@@ -795,6 +798,9 @@ def chart_hbar(labels, values, color=None):
     if len(labels) == 0:
         return empty_figure()
     color = color or COLORS["primary"]
+    # 가장 긴 숫자 텍스트 길이에 따라 오른쪽 여백 동적 계산
+    max_val = max(values) if values else 0
+    r_margin = max(60, len(f"{int(max_val):,}") * 8 + 20)
     fig = go.Figure(go.Bar(
         y=labels,
         x=values,
@@ -814,7 +820,7 @@ def chart_hbar(labels, values, color=None):
         xaxis=dict(showgrid=True, gridcolor="#f1f5f9", showline=False, zeroline=False, tickfont=dict(size=10)),
         yaxis=dict(showgrid=False, showline=False, zeroline=False, tickfont=dict(size=11), autorange="reversed"),
         height=380,
-        margin=dict(t=10, b=8, l=8, r=50),
+        margin=dict(t=10, b=8, l=8, r=r_margin),
     )
     return fig
 

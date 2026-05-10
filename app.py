@@ -1131,34 +1131,15 @@ tab1, tab2, tab3 = st.tabs(["대시보드", "일간 보고서", "월간 보고�
 # TAB 1 — 대시보드
 # ══════════════════════════════════════════════
 with tab1:
-    # KPI cards + sparklines
-    daily_values = daily_df["건수"].tolist() if not daily_df.empty else []
-    spark_navy  = daily_values
-    spark_green = daily_values[::-1]  # placeholder series for adoption trend
-    spark_rose  = daily_values
-    spark_amber = daily_values
-
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(kpi_card("총 발생 건수", fmt_int(total_count), "선택 기간 누계", TOKENS["navy"], "건"), unsafe_allow_html=True)
-        st.plotly_chart(chart_sparkline(spark_navy, TOKENS["navy"]),
-                        use_container_width=True, config={"displayModeBar": False, "staticPlot": True},
-                        key="kpi_spark_1")
     with k2:
         st.markdown(kpi_card("입양률", pct(adoption_count, total_count), f"▲ 입양 {fmt_int(adoption_count)}건", TOKENS["green"]), unsafe_allow_html=True)
-        st.plotly_chart(chart_sparkline(spark_green, TOKENS["green"]),
-                        use_container_width=True, config={"displayModeBar": False, "staticPlot": True},
-                        key="kpi_spark_2")
     with k3:
         st.markdown(kpi_card("안락사율", pct(euthanasia_count, total_count), f"안락사 {fmt_int(euthanasia_count)}건", TOKENS["rose"]), unsafe_allow_html=True)
-        st.plotly_chart(chart_sparkline(spark_rose, TOKENS["rose"]),
-                        use_container_width=True, config={"displayModeBar": False, "staticPlot": True},
-                        key="kpi_spark_3")
     with k4:
         st.markdown(kpi_card("현재 보호중", fmt_int(protected_count), "선택 기간 기준", TOKENS["amber"], "건"), unsafe_allow_html=True)
-        st.plotly_chart(chart_sparkline(spark_amber, TOKENS["amber"]),
-                        use_container_width=True, config={"displayModeBar": False, "staticPlot": True},
-                        key="kpi_spark_4")
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
